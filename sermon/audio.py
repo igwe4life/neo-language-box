@@ -401,3 +401,189 @@ class NetworkMicrophoneSource(MicrophoneSource):
     def notify_speaker(self, connected: bool) -> None:
         """Toggle the connected/disconnected state so UI can reflect it."""
         self.speaker_connected = connected
+
+
+class SystemAudioSource(MicrophoneSource):
+    """Captures whatever the laptop is currently playing (WASAPI loopback).
+
+    On Windows any audio played by an application goes through the WASAPI
+    audio engine. This source opens the DEFAULT output device in loopback
+    mode - the same trick OBS Studio uses - so anything playing (a sermon
+    video, a livestream, a Zoom call) becomes the pipeline's input.
+
+    Uses PyAudioWPatch: a maintained PyAudio fork that exposes the
+    Windows-only `paWinWasapiLoopback` flag which the stock `sounddevice`
+    build doesn't ship. No new native install for the user - the wheel
+    bundles its own PortAudio.
+
+    On non-Windows platforms this class won't work (loopback is Windows-
+    specific to WASAPI). The doctor and CLI should gate on OS.
+
+    Loopback devices always report the OUTPUT sample rate + channel count.
+    On this hardware that's 48 kHz stereo; we downmix to mono and
+    resample to 16 kHz to keep the rest of the pipeline unchanged.
+    """
+
+    def __init__(self, cfg: AudioConfig, device_name: str | None = None):
+        super().__init__(cfg)
+        self.device_name = device_name        # None = follow default output
+        self.paused = True                    # explicit Start button, per user spec
+        self._pa = None
+        self._pa_stream = None
+        self._reader_thread = None
+        self._pa_sample_rate = 48000
+        self._pa_channels = 2
+
+    # ---- pause / resume for the explicit Start button ---------------------
+
+    def resume(self) -> None:
+        """Begin (or resume) forwarding captured audio into the segmenter."""
+        self.paused = False
+
+    def pause(self) -> None:
+        """Stop forwarding audio. The stream stays open; toggling back is
+        instant. Any buffered audio is discarded."""
+        self.paused = True
+        # Drop the partial utterance so resuming doesn't stitch to old audio
+        try:
+            while True: self._raw_q.get_nowait()
+        except Exception:
+            pass
+
+    # ---- lifecycle --------------------------------------------------------
+
+    def start(self) -> None:
+        import pyaudiowpatch as pyaudio
+        self._pa = pyaudio.PyAudio()
+
+        # Find the loopback endpoint for the requested (or default) output.
+        target = self._pick_loopback_device()
+        self._pa_sample_rate = int(target["defaultSampleRate"])
+        self._pa_channels = int(target["maxInputChannels"])
+        # Read in ~30 ms chunks at whatever the device rate is
+        frames_per_read = max(1, int(self._pa_sample_rate * 0.03))
+
+        self._pa_stream = self._pa.open(
+            format=pyaudio.paFloat32,
+            channels=self._pa_channels,
+            rate=self._pa_sample_rate,
+            input=True,
+            input_device_index=target["index"],
+            frames_per_buffer=frames_per_read,
+        )
+
+        # Reader thread pulls from PortAudio, feeds the segmenter
+        import threading
+        self._reader_thread = threading.Thread(
+            target=self._reader_loop, args=(frames_per_read,),
+            daemon=True, name="audio-loopback")
+        self._reader_thread.start()
+
+        # Segmenter thread (inherited from MicrophoneSource) consumes _raw_q
+        self._thread = threading.Thread(target=self._segment_loop, daemon=True,
+                                        name="segmenter-sysaudio")
+        self._thread.start()
+
+    def stop(self) -> None:
+        # Signal reader thread FIRST so it exits its read loop, then join it
+        # BEFORE closing the PortAudio stream. Closing while a read is in
+        # flight is the source of PyAudio's Windows-shutdown segfaults.
+        self._stop.set()
+        if self._reader_thread is not None:
+            self._reader_thread.join(timeout=2.0)
+            self._reader_thread = None
+        stream = self._pa_stream
+        self._pa_stream = None
+        if stream is not None:
+            try: stream.stop_stream()
+            except Exception: pass
+            try: stream.close()
+            except Exception: pass
+        if self._pa is not None:
+            try: self._pa.terminate()
+            except Exception: pass
+            self._pa = None
+        if self._thread is not None:
+            self._thread.join(timeout=1.5)
+            self._thread = None
+
+    # ---- device discovery -------------------------------------------------
+
+    def _pick_loopback_device(self):
+        """Return the pyaudiowpatch device info for the loopback we should
+        capture. If `self.device_name` is set, look for a loopback matching
+        that name; otherwise the default output."""
+        if self.device_name:
+            for i in range(self._pa.get_device_count()):
+                d = self._pa.get_device_info_by_index(i)
+                if d.get("isLoopbackDevice") and self.device_name.lower() in d["name"].lower():
+                    return d
+            raise RuntimeError(f"No WASAPI loopback device matches {self.device_name!r}")
+        return self._pa.get_default_wasapi_loopback()
+
+    @staticmethod
+    def list_loopback_devices() -> list[dict]:
+        """Enumerate loopback-capable devices for the operator's UI."""
+        import pyaudiowpatch as pyaudio
+        pa = pyaudio.PyAudio()
+        out = []
+        try:
+            for i in range(pa.get_device_count()):
+                d = pa.get_device_info_by_index(i)
+                if d.get("isLoopbackDevice"):
+                    out.append({
+                        "index": d["index"],
+                        "name": d["name"],
+                        "sample_rate": int(d["defaultSampleRate"]),
+                        "channels": int(d["maxInputChannels"]),
+                    })
+        finally:
+            pa.terminate()
+        return out
+
+    # ---- capture loop -----------------------------------------------------
+
+    def _reader_loop(self, frames_per_read: int) -> None:
+        """Reads PortAudio frames, downmixes stereo->mono, resamples to
+        16 kHz mono float32, hands off to the segmenter (`_raw_q`)."""
+        block16k = int(16000 * self.cfg.block_ms / 1000)
+        in_sr = self._pa_sample_rate
+        ch = self._pa_channels
+        ratio = 16000 / in_sr
+
+        while not self._stop.is_set():
+            stream = self._pa_stream    # atomic snapshot; stop() may null it
+            if stream is None:
+                return
+            try:
+                data = stream.read(frames_per_read, exception_on_overflow=False)
+            except Exception:
+                # Stream was closed under us during shutdown - not a warning
+                if self._stop.is_set() or self._pa_stream is None:
+                    return
+                self.stream_warnings += 1
+                continue
+            if self.paused:
+                continue        # explicit Start button not pressed yet
+
+            arr = np.frombuffer(data, dtype=np.float32)
+            if ch > 1:
+                arr = arr.reshape(-1, ch).mean(axis=1)
+            # Linear resample to 16 kHz mono
+            if in_sr != 16000:
+                n_out = int(arr.size * ratio)
+                if n_out > 0:
+                    src_x = np.linspace(0, 1, arr.size, endpoint=False)
+                    dst_x = np.linspace(0, 1, n_out, endpoint=False)
+                    arr = np.interp(dst_x, src_x, arr).astype(np.float32)
+
+            # Feed the segmenter in `block16k`-sized chunks so its frame
+            # math matches the local-mic case.
+            for i in range(0, arr.size, block16k):
+                chunk = arr[i:i + block16k]
+                if chunk.size == 0:
+                    continue
+                try:
+                    self._raw_q.put_nowait(chunk)
+                except queue.Full:
+                    self.overflows += 1

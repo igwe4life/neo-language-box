@@ -42,7 +42,18 @@ from websockets.http11 import Response
 _LOGGER = logging.getLogger("sermon.server")
 LISTENER_HTML = Path(__file__).parent / "templates" / "listen.html"
 SPEAKER_HTML = Path(__file__).parent / "templates" / "speaker.html"
+QR_HTML = Path(__file__).parent / "templates" / "qr.html"
 HTML_PATH = LISTENER_HTML   # backwards compat for diagnostics
+
+
+def _qr_svg(url: str) -> str:
+    """QR code as inline SVG. Rendered once per HTTP request; tiny."""
+    import io, segno
+    q = segno.make(url, error="M")
+    buf = io.BytesIO()
+    q.save(buf, kind="svg", scale=10, dark="#000", light="#fff",
+           xmldecl=False, svgns=False, omitsize=False)
+    return buf.getvalue().decode()
 
 
 # --------------------------------------------------------------------- broadcaster
@@ -162,6 +173,40 @@ def _make_process_request(broadcaster: Broadcaster):
             ]), body)
         if path in ("/speaker", "/speak"):
             body = _read(SPEAKER_HTML)
+            return Response(200, "OK", Headers([
+                ("Content-Type", "text/html; charset=utf-8"),
+                ("Content-Length", str(len(body))),
+                ("Cache-Control", "no-store"),
+            ]), body)
+        if path == "/qr":
+            # Rendered on-the-fly with the ORIGIN the client used to reach us,
+            # so if the operator opens it from LAN their phones scan the LAN
+            # URL, not localhost. Falls back to first LAN IP if the request
+            # arrived over loopback (e.g. the desktop app previewing it).
+            try:
+                host_hdr = request.headers.get("Host", "")
+            except Exception:
+                host_hdr = ""
+            listener_url = ""
+            if host_hdr and not host_hdr.startswith("127.") \
+                    and not host_hdr.startswith("localhost"):
+                # Use whatever origin the browser hit us on
+                scheme = "https" if getattr(request, "extensions", None) is None else "https"
+                listener_url = f"https://{host_hdr}/"
+            else:
+                ips = list_local_ips()
+                if ips:
+                    # First non-loopback address; assume the LAN HTTPS port
+                    from urllib.parse import urlparse
+                    host_only, _, port_str = host_hdr.partition(":")
+                    port = port_str or "8443"
+                    listener_url = f"https://{ips[0]}:{port}/"
+            if not listener_url:
+                listener_url = "https://<no-lan-ip>/"
+            page = _read(QR_HTML).decode("utf-8")
+            page = page.replace("{{URL}}", listener_url)
+            page = page.replace("{{QR_SVG}}", _qr_svg(listener_url))
+            body = page.encode("utf-8")
             return Response(200, "OK", Headers([
                 ("Content-Type", "text/html; charset=utf-8"),
                 ("Content-Length", str(len(body))),
