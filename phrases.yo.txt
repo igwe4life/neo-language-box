@@ -1,0 +1,53 @@
+# Phrase-override table for English -> Yoruba.
+#
+# The translation model was trained on a tiny parallel corpus (~4k sentences
+# from Ubuntu/GNOME localisation) with the rest back-translated. That makes it
+# strong on sermon-length prose but weak on short, high-frequency courtesies -
+# it mistranslates "Good morning everyone" as "nobody who doesn't enjoy the
+# morning", and "Bye-bye" as "bread". Force overrides here.
+#
+# FORMAT
+#   Case-insensitive.  english text = yoruba text
+#   One rule per line. Lines starting with # are ignored.
+#   Matched on the WHOLE input first, then longest-match substring.
+#   Punctuation at the end of the input is preserved.
+#
+# Add more as you find them - `python run.py translate "..."` is the fastest
+# way to test one.
+
+Good morning everyone     = Ẹ káàárọ̀ o
+Good morning              = Ẹ káàárọ̀
+Good afternoon everyone   = Ẹ káàsán o
+Good afternoon            = Ẹ káàsán
+Good evening everyone     = Ẹ kúùrọ̀lẹ́ o
+Good evening              = Ẹ kúùrọ̀lẹ́
+Hello everyone            = Ẹ nlẹ́ o
+Hello                     = Pẹ̀lẹ́ o
+Hi                        = Pẹ̀lẹ́ o
+Bye-bye                   = Ó dàbọ̀
+Goodbye                   = Ó dàbọ̀
+Thank you                 = Ẹ ṣeun
+Thank you all             = Ẹ ṣeun gbogbo yín
+Thank you very much       = Ẹ ṣeun púpọ̀
+Thanks                    = Ẹ ṣeun
+Thanks a lot              = Ẹ ṣeun púpọ̀
+Amen                      = Àmín
+Hallelujah                = Halelúyà
+Praise the Lord           = Ẹ yin Olúwa
+Praise God                = Ẹ yin Ọlọ́run
+Brothers and sisters      = Ẹ̀yin arákùnrin àti arábìnrin
+My brothers and sisters   = Ẹ̀yin arákùnrin àti arábìnrin mi
+
+# Idioms the model translates literally rather than by meaning.
+#
+# NOTE: rules match WHOLE sentences (case-insensitive, trailing punctuation
+# forgiven). "so let's call it the day" won't match "Let's call it the day"
+# because of the leading connector - list the common prefixed variants too.
+Let's call it the day        = Ẹ jẹ́ ká dáwọ́ dúró fún òní
+Let's call it a day          = Ẹ jẹ́ ká dáwọ́ dúró fún òní
+So let's call it the day     = Ẹ jẹ́ ká dáwọ́ dúró fún òní
+So let's call it a day       = Ẹ jẹ́ ká dáwọ́ dúró fún òní
+That will be all for today   = Ìyẹn ni gbogbo rẹ̀ fún òní
+That will be all for now     = Ìyẹn ni gbogbo rẹ̀ fún ìsinsìnyí
+Let us pray                  = Ẹ jẹ́ ká gbàdúrà
+Let's pray                   = Ẹ jẹ́ ká gbàdúrà

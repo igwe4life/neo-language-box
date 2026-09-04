@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#000">
+<title>Speaker</title>
+<style>
+  :root {
+    --bg: #000;
+    --fg: #f2f2f2;
+    --muted: #7a7a7a;
+    --accent: #7cc4ff;
+    --accent-strong: #2b8dff;
+    --live: #35c46c;
+    --dead: #b93a3a;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100vh; overflow: hidden;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    display: flex; flex-direction: column; align-items: center;
+    padding: env(safe-area-inset-top) 20px env(safe-area-inset-bottom);
+  }
+
+  header {
+    width: 100%; display: flex; align-items: center; gap: 10px;
+    padding: 14px 4px 8px;
+  }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--dead); box-shadow: 0 0 8px currentColor;
+  }
+  .dot.live { background: var(--live); }
+  .title { font-weight: 600; letter-spacing: .3px; }
+  .spacer { flex: 1; }
+  .badge {
+    background: rgba(255,255,255,0.06); color: var(--muted);
+    padding: 4px 10px; border-radius: 999px; font-size: 12px;
+  }
+
+  main {
+    flex: 1; width: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 28px;
+  }
+
+  #big {
+    background: var(--accent-strong); color: white; border: none;
+    border-radius: 999px; padding: 22px 44px;
+    font-size: 20px; font-weight: 700; letter-spacing: .5px;
+    cursor: pointer; box-shadow: 0 8px 28px rgba(43,141,255,0.35);
+    animation: pulse 2s infinite;
+  }
+  #big.recording {
+    background: #cf3a3a; box-shadow: 0 8px 28px rgba(207,58,58,0.5);
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 8px 28px rgba(43,141,255,0.35); }
+    50%      { box-shadow: 0 8px 46px rgba(43,141,255,0.75); }
+  }
+
+  #meter {
+    width: 82vw; max-width: 480px; height: 14px;
+    background: rgba(255,255,255,0.05); border-radius: 999px;
+    overflow: hidden; position: relative;
+    display: none;
+  }
+  #meter.on { display: block; }
+  #meter .bar {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #35c46c 0%, #35c46c 60%, #e8b53a 80%, #e05656 100%);
+    transition: width 60ms linear;
+  }
+  #meter .thresh {
+    position: absolute; top: -3px; bottom: -3px; left: 12%;
+    width: 2px; background: rgba(255,255,255,0.25);
+  }
+  #hint {
+    color: var(--muted); font-size: 14px; text-align: center;
+    max-width: 320px; line-height: 1.55; padding: 0 10px;
+  }
+
+  #transcript {
+    width: 100%; max-width: 620px; padding: 18px 10px 20px;
+    text-align: center; min-height: 28vh;
+  }
+  #transcript .label { color: var(--muted); font-size: 11px; letter-spacing: 1px; }
+  #transcript .en {
+    font-size: clamp(19px, 5.5vw, 26px); line-height: 1.4;
+    margin-top: 6px; font-weight: 500;
+  }
+  #transcript.empty .en { color: var(--muted); font-style: italic; font-weight: 400; }
+
+  .err {
+    color: #e08080; font-size: 13px; text-align: center; padding: 8px 20px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="dot" id="dot" aria-label="connection"></span>
+  <span class="title">Speaker</span>
+  <span class="spacer"></span>
+  <span class="badge" id="listeners">0 listeners</span>
+</header>
+
+<main>
+  <button id="big">Tap to start speaking</button>
+  <div id="meter"><div class="bar" id="bar"></div><div class="thresh"></div></div>
+  <div id="hint">Grant mic access when your phone asks.<br>
+    Everyone on the listener page will hear you translated live.</div>
+</main>
+
+<div id="transcript" class="empty">
+  <div class="label">LAST HEARD</div>
+  <div class="en" id="last">—</div>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const dot = $("dot"), big = $("big"), meter = $("meter"), bar = $("bar");
+const hint = $("hint"), listenersEl = $("listeners");
+const transcript = $("transcript"), lastText = $("last");
+
+// ------------------------------------------------------ ws for status
+// The speaker ALSO connects to /ws so it can see listener count + the
+// transcript of what it just said (the pipeline echoes it back). This is
+// separate from the /mic upstream socket that carries audio.
+let statusWs = null;
+function connectStatus() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  try { statusWs = new WebSocket(proto + "//" + location.host + "/ws"); } catch { return; }
+  statusWs.addEventListener("message", ev => {
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === "translation" && msg.english) {
+        transcript.classList.remove("empty");
+        lastText.textContent = msg.english;
+      }
+    } catch {}
+  });
+  statusWs.addEventListener("close", () => setTimeout(connectStatus, 1000));
+}
+connectStatus();
+
+// ------------------------------------------------------ mic capture
+let recording = false;
+let stream = null, ctx = null, worklet = null, micWs = null;
+let sampleRate = 16000;
+
+const WORKLET_JS = `
+class Cap extends AudioWorkletProcessor {
+  constructor(){
+    super();
+    this._buf = new Float32Array(0);
+    this._chunk = 2048;  // send in ~40 ms chunks at 48 kHz
+  }
+  process(inputs){
+    const ch = inputs[0][0];
+    if (!ch) return true;
+    // Concatenate the incoming frame into a rolling buffer, emit on threshold
+    const n = this._buf.length + ch.length;
+    const b = new Float32Array(n);
+    b.set(this._buf); b.set(ch, this._buf.length);
+    this._buf = b;
+    while (this._buf.length >= this._chunk) {
+      const out = this._buf.slice(0, this._chunk);
+      this._buf = this._buf.slice(this._chunk);
+      this.port.postMessage(out, [out.buffer]);
+    }
+    return true;
+  }
+}
+registerProcessor('cap', Cap);
+`;
+
+async function startRecording() {
+  if (recording) return;
+  // The mic API is only available in a "secure context": HTTPS, or localhost.
+  // Over plain HTTP on a LAN IP (http://192.168.x.x), Chrome and Safari BOTH
+  // hide navigator.mediaDevices entirely - calling .getUserMedia() throws
+  // TypeError. Detect and explain, rather than showing a bogus "permission
+  // denied" message.
+  const isSecure = window.isSecureContext ||
+                   location.hostname === "localhost" ||
+                   location.hostname === "127.0.0.1";
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !isSecure) {
+    showError("This browser blocks the microphone over plain HTTP. Ask the " +
+              "host to restart with --tls, then reopen this URL (starts with https://).");
+    return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        // AGC OFF on purpose. When on, the browser boosts room tone up to a
+        // fixed target during quiet moments; the server then receives
+        // amplified silence that Whisper hallucinates on ("God bless you",
+        // "Jesus Christ", counting sequences). With AGC off, quiet stays
+        // quiet, and VAD/energy gates can actually gate.
+        autoGainControl: false,
+        sampleRate: 16000,   // hint; browsers usually ignore this
+      }
+    });
+  } catch (err) {
+    const name = err && err.name ? err.name : "";
+    const msg = name === "NotAllowedError" ? "You denied mic access. Tap the URL bar's site info and allow the microphone." :
+                name === "NotFoundError"   ? "No microphone found on this device." :
+                name === "NotReadableError"? "The microphone is in use by another app. Close it and retry." :
+                "Mic error: " + (err.message || name || err);
+    showError(msg);
+    return;
+  }
+
+  try {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    sampleRate = ctx.sampleRate;   // whatever the browser gave us
+    const blob = new Blob([WORKLET_JS], { type: "application/javascript" });
+    await ctx.audioWorklet.addModule(URL.createObjectURL(blob));
+    const src = ctx.createMediaStreamSource(stream);
+    worklet = new AudioWorkletNode(ctx, "cap", { numberOfInputs: 1, numberOfOutputs: 0 });
+    src.connect(worklet);
+
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    micWs = new WebSocket(proto + "//" + location.host + "/mic");
+    micWs.binaryType = "arraybuffer";
+    micWs.onopen = () => {
+      micWs.send(JSON.stringify({ sampleRate: sampleRate }));
+      dot.classList.add("live");
+    };
+    micWs.onclose = () => { dot.classList.remove("live"); stopRecording(); };
+    micWs.onerror = () => { showError("Streaming error"); };
+
+    worklet.port.onmessage = ev => {
+      const f32 = ev.data;             // Float32Array in [-1, 1]
+      updateMeter(f32);
+      if (micWs && micWs.readyState === WebSocket.OPEN) {
+        const i16 = new Int16Array(f32.length);
+        for (let i = 0; i < f32.length; i++) {
+          const s = Math.max(-1, Math.min(1, f32[i]));
+          i16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+        micWs.send(i16.buffer);
+      }
+    };
+  } catch (err) {
+    showError("Audio setup failed: " + (err.message || err));
+    stopRecording();
+    return;
+  }
+
+  recording = true;
+  big.textContent = "Stop";
+  big.classList.add("recording");
+  meter.classList.add("on");
+  hint.textContent = "Speak clearly. The listener page shows the translation.";
+  clearError();
+}
+
+function stopRecording() {
+  recording = false;
+  big.textContent = "Tap to start speaking";
+  big.classList.remove("recording");
+  meter.classList.remove("on");
+  if (worklet) { try { worklet.disconnect(); } catch {} worklet = null; }
+  if (ctx) { try { ctx.close(); } catch {} ctx = null; }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  if (micWs) { try { micWs.close(); } catch {} micWs = null; }
+  dot.classList.remove("live");
+}
+
+big.addEventListener("click", () => recording ? stopRecording() : startRecording());
+
+function updateMeter(buf) {
+  let peak = 0;
+  for (let i = 0; i < buf.length; i++) {
+    const a = Math.abs(buf[i]); if (a > peak) peak = a;
+  }
+  const db = 20 * Math.log10(peak + 1e-6);
+  const pct = Math.max(0, Math.min(100, (db + 60) * 100 / 60));
+  bar.style.width = pct.toFixed(0) + "%";
+}
+
+let errEl = null;
+function showError(text) {
+  if (!errEl) {
+    errEl = document.createElement("div");
+    errEl.className = "err";
+    document.querySelector("main").appendChild(errEl);
+  }
+  errEl.textContent = text;
+}
+function clearError() { if (errEl) errEl.textContent = ""; }
+
+// Wake lock
+if ("wakeLock" in navigator) {
+  const req = () => navigator.wakeLock.request("screen").catch(() => {});
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") req();
+  });
+  req();
+}
+</script>
+</body>
+</html>

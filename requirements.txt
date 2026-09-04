@@ -1,0 +1,14 @@
+# Phase 1 runtime dependencies - all local inference, no cloud APIs, no API keys.
+#
+# faster-whisper pulls in: ctranslate2, tokenizers, onnxruntime, av, huggingface-hub.
+# There is deliberately no PyTorch and no transformers anywhere in this list.
+
+faster-whisper>=1.1,<2     # local Whisper STT (CTranslate2 backend)
+ctranslate2>=4.4,<5        # inference engine, shared by STT and translation
+sentencepiece>=0.2.0       # tokenizer for the OPUS-MT translation model
+piper-tts>=1.7,<2          # local French speech synthesis (reuses onnxruntime)
+websockets>=15,<18         # Wi-Fi streaming to phones (--serve)
+sounddevice>=0.4.6         # microphone capture (bundles PortAudio on Windows)
+numpy>=1.24,<3             # audio buffers + energy VAD
+psutil>=5.9                # diagnostics: RAM / CPU reporting
+huggingface-hub>=0.23      # one-time model download (offline afterwards)

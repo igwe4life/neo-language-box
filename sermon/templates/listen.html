@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#000">
+<title>Live Translation</title>
+<style>
+  :root {
+    --bg: #000;
+    --fg: #f2f2f2;
+    --muted: #6a6a6a;
+    --accent: #7cc4ff;
+    --accent-strong: #2b8dff;
+    --pill-bg: rgba(255, 255, 255, 0.06);
+    --pill-border: rgba(255, 255, 255, 0.12);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100vh; overflow: hidden;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+            env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  /* Top language chips - unobtrusive, but tappable */
+  #top {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    padding: 14px 12px 6px;
+  }
+  .chip {
+    background: var(--pill-bg); color: var(--fg);
+    border: 1px solid var(--pill-border); border-radius: 999px;
+    padding: 8px 18px; font-size: 15px; font-weight: 600;
+    letter-spacing: .5px; cursor: pointer; user-select: none;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .chip.on {
+    background: var(--accent-strong); border-color: var(--accent-strong);
+    color: #fff;
+  }
+  .chip .flag { font-size: 17px; }
+  #mute {
+    position: absolute; top: 12px; right: 12px;
+    background: transparent; border: none; color: var(--muted);
+    font-size: 22px; padding: 8px; cursor: pointer;
+  }
+  #mute.on { color: var(--accent); }
+  #status {
+    position: absolute; top: 22px; left: 20px;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #b93a3a; box-shadow: 0 0 8px currentColor;
+  }
+  #status.live { background: #35c46c; }
+
+  /* Center: visualiser */
+  #stage {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  canvas#viz {
+    width: 100%; max-width: 620px; height: 260px;
+    display: block;
+  }
+
+  /* Bottom: current translation only */
+  #caption {
+    padding: 22px 22px calc(28px + env(safe-area-inset-bottom));
+    text-align: center; line-height: 1.35;
+    font-size: clamp(22px, 6.5vw, 34px);
+    font-weight: 500;
+    min-height: 28vh;
+    transition: opacity 0.35s ease;
+  }
+  #caption.dim { opacity: 0.35; }
+  #caption.empty {
+    color: var(--muted); font-style: italic;
+    font-size: clamp(16px, 4.5vw, 22px); font-weight: 400;
+  }
+
+  /* First-tap gate - full-screen language pick + audio unlock */
+  #gate {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 30px;
+    padding: 24px;
+    background: radial-gradient(circle at 50% 40%, #142238 0%, #000 80%);
+    text-align: center;
+  }
+  #gate.hidden { display: none; }
+  #gate .brand {
+    font-size: 22px; font-weight: 600; letter-spacing: .4px;
+    color: #fff;
+  }
+  #gate .sub {
+    color: var(--muted); font-size: 15px; max-width: 320px; line-height: 1.5;
+  }
+  #gate .langgroup { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+  #gate .chip { padding: 14px 26px; font-size: 17px; }
+  #gate .go {
+    background: var(--accent-strong); color: white; border: none;
+    border-radius: 999px; padding: 18px 40px;
+    font-size: 18px; font-weight: 700; letter-spacing: .5px;
+    cursor: pointer; opacity: 0.5; pointer-events: none;
+    box-shadow: 0 8px 28px rgba(43, 141, 255, 0.35);
+    transition: opacity 0.2s;
+  }
+  #gate .go.ready {
+    opacity: 1; pointer-events: auto;
+    animation: pulse-glow 2s infinite;
+  }
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 8px 28px rgba(43, 141, 255, 0.35); }
+    50%      { box-shadow: 0 8px 46px rgba(43, 141, 255, 0.85); }
+  }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="brand">Live Translation</div>
+  <div class="sub">Pick a language.<br>The translation will play automatically as the speaker talks.</div>
+  <div class="langgroup" id="gate-langs">
+    <button class="chip" data-lang="fr"><span class="flag">🇫🇷</span>Français</button>
+    <button class="chip" data-lang="es"><span class="flag">🇪🇸</span>Español</button>
+  </div>
+  <button class="go" id="gate-go">Start listening</button>
+</div>
+
+<div id="status" aria-label="connection"></div>
+<button id="mute" class="on" aria-label="mute">🔊</button>
+
+<div id="top">
+  <button class="chip" data-lang="fr"><span class="flag">🇫🇷</span>FR</button>
+  <button class="chip" data-lang="es"><span class="flag">🇪🇸</span>ES</button>
+</div>
+
+<div id="stage"><canvas id="viz"></canvas></div>
+
+<div id="caption" class="empty">waiting for the speaker…</div>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------- storage
+const store = {
+  get: (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch { return d; } },
+  set: (k, v) => { try { localStorage.setItem(k, String(v)); } catch {} },
+};
+let lang    = store.get("lang", "");     // no default - forces first pick
+let voiceOn = store.get("voice", "1") === "1";
+
+// ---------------------------------------------------------- DOM shortcuts
+const $ = id => document.getElementById(id);
+const gate      = $("gate");
+const gateGo    = $("gate-go");
+const gateLangs = document.querySelectorAll("#gate-langs .chip");
+const topLangs  = document.querySelectorAll("#top .chip");
+const muteBtn   = $("mute");
+const statusDot = $("status");
+const caption   = $("caption");
+const stage     = $("stage");
+const viz       = $("viz");
+const vctx      = viz.getContext("2d");
+
+// ------------------------------------------------------ language painting
+function paintLangs() {
+  gateLangs.forEach(b => b.classList.toggle("on", b.dataset.lang === lang));
+  topLangs .forEach(b => b.classList.toggle("on", b.dataset.lang === lang));
+  gateGo.classList.toggle("ready", !!lang);
+}
+function paintMute() {
+  muteBtn.textContent = voiceOn ? "🔊" : "🔇";
+  muteBtn.classList.toggle("on", voiceOn);
+}
+paintLangs(); paintMute();
+
+gateLangs.forEach(b => b.addEventListener("click", () => {
+  lang = b.dataset.lang; store.set("lang", lang); paintLangs();
+}));
+topLangs.forEach(b => b.addEventListener("click", () => {
+  const old = lang;
+  lang = b.dataset.lang; store.set("lang", lang); paintLangs();
+  if (old !== lang) {
+    // Show the current translation in the new language if we have one
+    if (currentMessage) applyMessage(currentMessage, /*speak*/ false);
+    // Stop any in-flight speech of the old language
+    stopPlayback();
+  }
+}));
+muteBtn.addEventListener("click", () => {
+  voiceOn = !voiceOn; store.set("voice", voiceOn ? "1" : "0"); paintMute();
+  if (!voiceOn) stopPlayback();
+});
+
+// ------------------------------------------------------ first-tap gate
+gateGo.addEventListener("click", () => {
+  if (!lang) return;
+  primeAudio();       // audio + TTS unlock in the same user gesture
+  gate.classList.add("hidden");
+  // Only paint the "waiting" placeholder if we haven't already received a
+  // translation while the gate was up (which can happen if the WS connects
+  // fast). Otherwise we'd blank out live content.
+  if (!currentMessage) paintCaption("", /*empty*/ true);
+});
+
+// ----------------------------------------------------- canvas visualiser
+// Two states:
+//   idle:    a gentle breathing dot in the center
+//   playing: live waveform of the current audio through an AnalyserNode
+let audioCtx = null;
+let analyser = null;
+let sourceNode = null;
+let vizFrame = null;
+let breathing = true;
+
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = viz.clientWidth || 300;
+  const h = viz.clientHeight || 240;
+  viz.width = Math.round(w * dpr);
+  viz.height = Math.round(h * dpr);
+  vctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
+function drawIdle(t) {
+  const w = viz.clientWidth, h = viz.clientHeight;
+  vctx.clearRect(0, 0, w, h);
+  const cx = w / 2, cy = h / 2;
+  const r0 = Math.min(w, h) * 0.05;
+  const pulse = (Math.sin(t / 700) + 1) / 2;      // 0..1
+  vctx.fillStyle = `rgba(124, 196, 255, ${0.08 + pulse * 0.15})`;
+  vctx.beginPath(); vctx.arc(cx, cy, r0 + pulse * 8, 0, Math.PI * 2); vctx.fill();
+  vctx.fillStyle = `rgba(124, 196, 255, ${0.45 + pulse * 0.3})`;
+  vctx.beginPath(); vctx.arc(cx, cy, r0, 0, Math.PI * 2); vctx.fill();
+}
+
+function drawWave() {
+  const w = viz.clientWidth, h = viz.clientHeight;
+  vctx.clearRect(0, 0, w, h);
+  if (!analyser) return;
+  const buf = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(buf);
+  const cx = w / 2, cy = h / 2;
+  vctx.strokeStyle = "#7cc4ff";
+  vctx.lineWidth = 2.5;
+  vctx.beginPath();
+  const step = Math.max(1, Math.floor(buf.length / w));
+  for (let x = 0; x < w; x++) {
+    const s = buf[Math.min(buf.length - 1, x * step)];
+    const y = cy + s * (h * 0.4);
+    if (x === 0) vctx.moveTo(x, y); else vctx.lineTo(x, y);
+  }
+  vctx.stroke();
+
+  // Level-driven halo
+  let sum = 0;
+  for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+  const rms = Math.sqrt(sum / buf.length);
+  const glow = Math.min(1, rms * 6);
+  vctx.fillStyle = `rgba(43, 141, 255, ${0.05 + glow * 0.25})`;
+  vctx.beginPath(); vctx.arc(cx, cy, 12 + glow * 60, 0, Math.PI * 2); vctx.fill();
+}
+
+function vizLoop(t) {
+  if (breathing) drawIdle(t); else drawWave();
+  vizFrame = requestAnimationFrame(vizLoop);
+}
+vizFrame = requestAnimationFrame(vizLoop);
+
+// -------------------------------------------------------- caption
+function paintCaption(text, empty) {
+  caption.classList.toggle("empty", !!empty);
+  caption.textContent = text || (empty ? "waiting for the speaker…" : "");
+  caption.classList.remove("dim");
+}
+
+// -------------------------------------------------------- audio playback
+let currentAudio = null;
+let currentMessage = null;
+const audioQueue = [];
+const MAX_QUEUE = 2;
+
+function primeAudio() {
+  // Unlock both HTMLAudioElement autoplay AND Web Speech in the same gesture
+  if (!audioCtx) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch {}
+  }
+  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+  if ("speechSynthesis" in window) {
+    try {
+      const u = new SpeechSynthesisUtterance(" ");
+      u.volume = 0; speechSynthesis.speak(u);
+    } catch {}
+  }
+}
+
+function stopPlayback() {
+  audioQueue.length = 0;
+  if (currentAudio) {
+    try { currentAudio.pause(); } catch {}
+    currentAudio = null;
+  }
+  if ("speechSynthesis" in window) { try { speechSynthesis.cancel(); } catch {} }
+  breathing = true;
+  disconnectAnalyser();
+}
+
+function connectAnalyser(mediaEl) {
+  if (!audioCtx) return;
+  try {
+    if (sourceNode) { try { sourceNode.disconnect(); } catch {} }
+    sourceNode = audioCtx.createMediaElementSource(mediaEl);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    sourceNode.connect(analyser);
+    analyser.connect(audioCtx.destination);
+    breathing = false;
+  } catch (err) {
+    // If it fails (e.g. cross-origin), still play; just no waveform
+    breathing = true;
+  }
+}
+function disconnectAnalyser() {
+  if (analyser) { try { analyser.disconnect(); } catch {} analyser = null; }
+  if (sourceNode) { try { sourceNode.disconnect(); } catch {} sourceNode = null; }
+}
+
+function enqueue(msg) {
+  currentMessage = msg;
+  applyMessage(msg, /*speak*/ voiceOn);
+}
+
+function applyMessage(msg, speak) {
+  const text = msg[lang] || "";
+  const audioUrl = msg["audio_" + lang];
+  paintCaption(text || "(no translation)", !text);
+  if (!speak) return;
+
+  if (audioUrl) {
+    playServerAudio(audioUrl);
+  } else if ("speechSynthesis" in window && text) {
+    playTTS(text);
+  }
+}
+
+function playServerAudio(url) {
+  audioQueue.push(url);
+  while (audioQueue.length > MAX_QUEUE) audioQueue.shift();
+  drainAudio();
+}
+function drainAudio() {
+  if (currentAudio) return;
+  const url = audioQueue.shift();
+  if (!url) { breathing = true; disconnectAnalyser(); return; }
+  const audio = new Audio(url);
+  audio.crossOrigin = "anonymous";     // needed for MediaElementSource on same-origin too on some browsers
+  audio.preload = "auto";
+  currentAudio = audio;
+  connectAnalyser(audio);
+  const done = () => {
+    if (currentAudio !== audio) return;
+    currentAudio = null;
+    breathing = true; disconnectAnalyser();
+    drainAudio();
+  };
+  audio.addEventListener("ended", done, { once: true });
+  audio.addEventListener("error", done, { once: true });
+  const p = audio.play();
+  if (p && typeof p.then === "function") p.catch(() => done());
+}
+
+function playTTS(text) {
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = lang === "es" ? "es-ES" : "fr-FR";
+    u.rate = 1;
+    breathing = true;     // no analyser hook for Web Speech
+    speechSynthesis.speak(u);
+  } catch {}
+}
+
+// -------------------------------------------------------- websocket
+let ws = null;
+let reconnectDelay = 500;
+function setDot(live) { statusDot.classList.toggle("live", !!live); }
+
+function receive(msg) {
+  if (msg.type === "welcome") {
+    // Take only the most recent, if any - no history feed
+    if (Array.isArray(msg.history) && msg.history.length) {
+      const last = msg.history[msg.history.length - 1];
+      currentMessage = last;
+      applyMessage(last, /*speak*/ false);
+      caption.classList.add("dim");    // it's stale
+    }
+    return;
+  }
+  if (msg.type === "translation") enqueue(msg);
+}
+
+function connect() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const url = proto + "//" + location.host + "/ws";
+  try { ws = new WebSocket(url); } catch { scheduleReconnect(); return; }
+  ws.addEventListener("open", () => { setDot(true); reconnectDelay = 500; });
+  ws.addEventListener("close", () => { setDot(false); scheduleReconnect(); });
+  ws.addEventListener("error", () => { try { ws.close(); } catch {} });
+  ws.addEventListener("message", ev => {
+    try { receive(JSON.parse(ev.data)); } catch {}
+  });
+}
+function scheduleReconnect() {
+  setTimeout(connect, reconnectDelay);
+  reconnectDelay = Math.min(reconnectDelay * 1.6, 5000);
+}
+connect();
+
+// Keep the screen on
+if ("wakeLock" in navigator) {
+  const req = () => navigator.wakeLock.request("screen").catch(() => {});
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") req();
+  });
+  req();
+}
+</script>
+</body>
+</html>

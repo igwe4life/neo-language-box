@@ -1,0 +1,61 @@
+# Vocabulary hints for the speech recogniser.
+#
+# Whisper accepts a short prompt that biases what it expects to hear. Names and
+# terms listed here stop it falling back on acoustically similar everyday words
+# ("Samson" -> "Psalms", "Philistines" -> "peasants", "pillars" -> "steal those").
+#
+# HOW TO USE
+#   - One term or short phrase per line. Lines starting with # are ignored.
+#   - BEFORE EACH SERMON, add the proper nouns from that week's reading:
+#     the book, the people, the places. This is the single most effective
+#     accuracy change available on this hardware.
+#   - Budget: the prompt is capped at 224 tokens and the excess is silently
+#     DISCARDED. `python run.py doctor` reports the count. The list below is
+#     kept short on purpose so you have room to add your own.
+#   - Do not repeat words already in SERMON_PROMPT (Bible, Holy Spirit,
+#     resurrection hope, everlasting life, kingdom, Jehovah, congregation...) -
+#     duplicates just burn budget.
+
+# People most likely to be misheard
+Samson
+Delilah
+Moses
+Abraham
+David
+Goliath
+Elijah
+the Philistines
+the Israelites
+the Pharisees
+the apostles
+
+# Places and things
+Jerusalem
+Egypt
+the temple
+the pillars
+
+# Phrases this recogniser gets wrong without help
+signs and wonders
+beyond human strength
+God's active force
+
+# Words that keep getting misheard (you can add more freely — anything you
+# say often that comes out wrong)
+Kindly
+kindly hear me
+faith
+in this era
+applause
+first part
+brethren
+
+# Nigerian words / product context that Whisper doesn't ship with
+naira
+kobo
+Govita
+Milo
+Bournvita
+grams
+kilograms
+per 100 grams
