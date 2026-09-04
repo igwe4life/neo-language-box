@@ -103,7 +103,10 @@ def build_prompt(vocab_file: Path | None = DEFAULT_VOCAB_FILE) -> str | None:
 
 @dataclass
 class STTConfig:
-    model: str = "base.en"            # tiny.en | base.en | small.en
+    engine: str = "whisper"           # "whisper" or "parakeet"
+    # Whisper model names: tiny.en | base.en | small.en
+    # Parakeet model names: parakeet-110m | parakeet-0.6b
+    model: str = "base.en"
     compute_type: str = "int8"        # int8 is the right choice for AVX2 CPUs
     # Greedy decoding. beam=5 was previously fine when the pipeline ran alone,
     # but with --serve broadcasting to phones + Piper synthesising audio for
@@ -178,6 +181,14 @@ class AppConfig:
     @property
     def whisper_dir(self) -> Path:
         return self.models_dir / "whisper" / self.stt.model
+
+    @property
+    def parakeet_dir(self) -> Path:
+        return self.models_dir / self.stt.model
+
+    @property
+    def stt_model_dir(self) -> Path:
+        return self.parakeet_dir if self.stt.engine == "parakeet" else self.whisper_dir
 
     def mt_dir_for(self, target: str) -> Path:
         return self.models_dir / "mt" / f"opus-mt-en-{target}"

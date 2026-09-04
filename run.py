@@ -26,6 +26,19 @@ from sermon.console import enable_utf8_console  # noqa: E402
 
 def build_config(args) -> AppConfig:
     cfg = AppConfig()
+    if getattr(args, "stt", None):
+        # e.g. --stt parakeet-110m, --stt whisper-base.en
+        eng, _, m = args.stt.partition("-")
+        if eng == "parakeet":
+            cfg.stt.engine = "parakeet"
+            cfg.stt.model = "parakeet-" + (m or "110m")
+        elif eng == "whisper":
+            cfg.stt.engine = "whisper"
+            cfg.stt.model = m or "base.en"
+        else:
+            print(f"  !! unknown --stt {args.stt!r}. Use whisper-base.en, "
+                  "parakeet-110m, or parakeet-0.6b.")
+            return 2
     if getattr(args, "model", None):
         cfg.stt.model = args.model
     if getattr(args, "device", None) is not None:
@@ -88,8 +101,11 @@ def available_targets(cfg: AppConfig) -> list[str]:
 
 def require_models(cfg: AppConfig, need_stt: bool = True, need_tts: bool = False) -> None:
     missing = []
-    if need_stt and not (cfg.whisper_dir / "model.bin").exists():
-        missing.append(f"Whisper '{cfg.stt.model}' at {cfg.whisper_dir}")
+    if need_stt:
+        d = cfg.stt_model_dir
+        marker = "encoder.int8.onnx" if cfg.stt.engine == "parakeet" else "model.bin"
+        if not (d / marker).exists():
+            missing.append(f"{cfg.stt.engine} '{cfg.stt.model}' at {d}")
     # Only the PRIMARY target is required. Secondary targets fall through to
     # available_targets(), which just skips missing ones.
     if not (cfg.mt_dir / "model.bin").exists():
@@ -247,7 +263,7 @@ def cmd_live(args) -> int:
     from sermon.mt import MarianCT2Translator
     from sermon.pipeline import Pipeline
     from sermon.sinks import ConsoleSink
-    from sermon.stt import FasterWhisperTranscriber
+    from sermon.stt import FasterWhisperTranscriber, ParakeetTranscriber
 
     cfg = build_config(args)
     require_models(cfg, need_tts=cfg.tts.enabled)
@@ -261,8 +277,11 @@ def cmd_live(args) -> int:
     print("  LOCAL SERMON TRANSLATION (English -> "
           + " + ".join(t.upper() for t in targets) + ")")
     print("=" * 70)
-    print(f"  STT   faster-whisper {cfg.stt.model} ({cfg.stt.compute_type}, "
-          f"{cfg.stt.cpu_threads} threads)")
+    if cfg.stt.engine == "parakeet":
+        print(f"  STT   Parakeet {cfg.stt.model} (int8, {cfg.stt.cpu_threads} threads)")
+    else:
+        print(f"  STT   faster-whisper {cfg.stt.model} ({cfg.stt.compute_type}, "
+              f"{cfg.stt.cpu_threads} threads)")
     for t in targets:
         print(f"  MT    OPUS-MT en-{t} (CTranslate2 int8)")
     if cfg.tts.enabled:
@@ -272,7 +291,10 @@ def cmd_live(args) -> int:
 
     t0 = time.perf_counter()
     print("  Loading speech model...", end="", flush=True)
-    transcriber = FasterWhisperTranscriber(cfg.whisper_dir, cfg.stt)
+    if cfg.stt.engine == "parakeet":
+        transcriber = ParakeetTranscriber(cfg.parakeet_dir, cfg.stt)
+    else:
+        transcriber = FasterWhisperTranscriber(cfg.whisper_dir, cfg.stt)
     print(f" {time.perf_counter() - t0:.1f}s")
 
     from sermon.config import phrase_file_for
@@ -470,6 +492,12 @@ def main(argv=None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--model", choices=["tiny.en", "base.en", "small.en"],
                    help="Whisper model size (default: base.en)")
+    p.add_argument("--stt",
+                   choices=["whisper-tiny.en", "whisper-base.en", "whisper-small.en",
+                            "parakeet-110m", "parakeet-0.6b"],
+                   help="STT engine + model. Overrides --model. "
+                        "Whisper: supports vocabulary hints. "
+                        "Parakeet: ~4x faster on CPU, no vocab support.")
     p.add_argument("--device", type=int, help="audio input device index (see: run.py devices)")
     p.add_argument("--threads", type=int, help="CPU threads for inference")
     p.add_argument("--silence", type=int, metavar="MS",

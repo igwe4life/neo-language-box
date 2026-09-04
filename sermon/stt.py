@@ -94,6 +94,120 @@ class Transcriber(ABC):
         ...
 
 
+class ParakeetTranscriber(Transcriber):
+    """NVIDIA Parakeet (FastConformer transducer) via sherpa-onnx.
+
+    Runs on the same onnxruntime we already ship. Roughly 4x the throughput
+    of Whisper base.en on this class of CPU because it's non-autoregressive:
+    tokens are emitted by the joiner in parallel with the encoder rather
+    than one at a time.
+
+    Two variants:
+      - 110M ("parakeet-110m") : ~180 MB disk, ~500 MB RSS, fastest
+      - 0.6B ("parakeet-0.6b") : ~630 MB disk, ~1.5 GB RSS, best accuracy
+
+    Trade-offs vs faster-whisper:
+      * NO initial_prompt / vocabulary.txt biasing. Whatever the model was
+        trained on is what it recognises; unknown words go through as
+        acoustically-nearest guess.
+      * NO no_speech_threshold / avg_logprob per-segment gates. Silero VAD
+        gate is applied here as a pre-filter instead - same idea, different
+        implementation.
+      * Slightly less English coverage on rare vocabulary. Trained on
+        LibriSpeech-scale English so it's excellent on standard prose;
+        struggles with named entities as much as Whisper does.
+    """
+
+    PROMPT_TOKEN_LIMIT = 0     # no prompt mechanism
+
+    def __init__(self, model_dir: str | Path, cfg: STTConfig):
+        import sherpa_onnx
+
+        self.cfg = cfg
+        self.model_dir = Path(model_dir)
+        self.recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
+            encoder=str(self.model_dir / "encoder.int8.onnx"),
+            decoder=str(self.model_dir / "decoder.int8.onnx"),
+            joiner=str(self.model_dir / "joiner.int8.onnx"),
+            tokens=str(self.model_dir / "tokens.txt"),
+            model_type="nemo_transducer",
+            num_threads=cfg.cpu_threads,
+            sample_rate=16000,
+            feature_dim=80,
+        )
+        # Load Silero VAD as a pre-filter. Same job as the vad_filter=True in
+        # faster-whisper - reject non-speech buffers so the recogniser never
+        # even runs on room noise.
+        vad_model = _download_silero()
+        vad_conf = sherpa_onnx.VadModelConfig()
+        vad_conf.silero_vad.model = str(vad_model)
+        vad_conf.silero_vad.threshold = 0.6
+        vad_conf.silero_vad.min_silence_duration = 0.5
+        vad_conf.silero_vad.min_speech_duration = 0.5
+        vad_conf.sample_rate = 16000
+        vad_conf.provider = "cpu"
+        vad_conf.num_threads = 1
+        self.vad = sherpa_onnx.VoiceActivityDetector(vad_conf, buffer_size_in_seconds=30)
+
+    def prompt_tokens(self) -> int:
+        return 0
+
+    def transcribe(self, audio: np.ndarray, sample_rate: int) -> TranscriptionResult:
+        started = time.perf_counter()
+        if sample_rate != 16000:
+            # match Whisper interface but the mic source is 16 k already
+            raise ValueError("Parakeet expects 16 kHz input")
+
+        # Silero VAD: keep only the segments it flags as speech. Rejects a
+        # buffer of noise before recognition is even attempted.
+        self.vad.reset()
+        # feed audio in ~30 ms chunks (480 samples) - sherpa-onnx's expected shape
+        block = 512
+        speech_chunks: list[np.ndarray] = []
+        for i in range(0, len(audio), block):
+            self.vad.accept_waveform(audio[i:i + block].astype(np.float32))
+        # flush trailing state
+        self.vad.flush()
+        while not self.vad.empty():
+            seg = self.vad.front
+            speech_chunks.append(np.asarray(seg.samples, dtype=np.float32))
+            self.vad.pop()
+
+        if not speech_chunks:
+            return TranscriptionResult(
+                text="",
+                audio_seconds=len(audio) / sample_rate,
+                compute_seconds=time.perf_counter() - started,
+            )
+
+        speech = np.concatenate(speech_chunks)
+        stream = self.recognizer.create_stream()
+        stream.accept_waveform(sample_rate=16000, waveform=speech.tolist())
+        self.recognizer.decode_stream(stream)
+        text = stream.result.text.strip()
+
+        if _is_hallucination(text):
+            text = ""
+        return TranscriptionResult(
+            text=text,
+            audio_seconds=len(audio) / sample_rate,
+            compute_seconds=time.perf_counter() - started,
+        )
+
+
+def _download_silero() -> Path:
+    """Silero VAD is a tiny (~2 MB) ONNX model. Should be fetched via
+    fetch_models.py to avoid Python's cert-store issues on some Windows setups."""
+    dst = Path(__file__).resolve().parent.parent / "models" / "silero_vad.onnx"
+    if dst.exists() and dst.stat().st_size > 100_000:
+        return dst
+    raise FileNotFoundError(
+        f"Silero VAD missing at {dst}. Fetch it once with:\n"
+        "  curl -L https://github.com/snakers4/silero-vad/raw/v5.1/src/"
+        "silero_vad/data/silero_vad.onnx -o models/silero_vad.onnx"
+    )
+
+
 class FasterWhisperTranscriber(Transcriber):
     def __init__(self, model_path: str | Path, cfg: STTConfig):
         from faster_whisper import WhisperModel
