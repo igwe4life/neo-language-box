@@ -259,7 +259,7 @@ def cmd_speak(args) -> int:
 
 
 def cmd_live(args) -> int:
-    from sermon.audio import MicrophoneSource, NetworkMicrophoneSource
+    from sermon.audio import MicrophoneSource, NetworkMicrophoneSource, SystemAudioSource
     from sermon.mt import MarianCT2Translator
     from sermon.pipeline import Pipeline
     from sermon.sinks import ConsoleSink
@@ -311,14 +311,24 @@ def cmd_live(args) -> int:
         extra = f" [+ {len(rules)} phrase overrides]" if rules else ""
         print(f" {time.perf_counter() - t0:.1f}s{extra}")
 
-    use_network_mic = getattr(args, "source", "mic") == "browser"
+    source_kind = getattr(args, "source", "mic")
+    use_network_mic = source_kind == "browser"
+    use_system_audio = source_kind == "system"
     if use_network_mic and not cfg.server.enabled:
         print("  --source browser needs --serve. Turning --serve on.")
         cfg.server.enabled = True
     if use_network_mic and not cfg.server.tls and not getattr(args, "no_tls", False):
         print("  --source browser needs HTTPS for phone mic access. Turning --tls on.")
         cfg.server.tls = True
-    source = NetworkMicrophoneSource(cfg.audio) if use_network_mic else MicrophoneSource(cfg.audio)
+    if use_system_audio:
+        source = SystemAudioSource(cfg.audio)
+        # System audio needs the explicit Start button; auto-serve so the
+        # operator UI can talk to it.
+        cfg.server.enabled = True
+    elif use_network_mic:
+        source = NetworkMicrophoneSource(cfg.audio)
+    else:
+        source = MicrophoneSource(cfg.audio)
     sinks = [ConsoleSink(show_timing=not args.quiet)]
     speech_sink = None
     server_handle = None
@@ -566,10 +576,11 @@ def main(argv=None) -> int:
                      help="do NOT mute the mic during playback (headphones only)")
 
     src = p.add_argument_group("audio source")
-    src.add_argument("--source", choices=["mic", "browser"], default="mic",
-                     help="mic = this laptop's microphone (default). "
-                          "browser = wait for a speaker page to open a mic "
-                          "on their own phone/laptop and stream it here.")
+    src.add_argument("--source", choices=["mic", "browser", "system"], default="mic",
+                     help="mic = laptop microphone (default). "
+                          "browser = wait for a speaker page to open a phone mic. "
+                          "system = capture what the laptop is currently playing "
+                          "(WASAPI loopback; Windows only).")
 
     net = p.add_argument_group("Wi-Fi streaming to phones")
     net.add_argument("--serve", action="store_true",

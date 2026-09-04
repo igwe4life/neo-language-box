@@ -157,7 +157,7 @@ import re as _re
 _AUDIO_PATH = _re.compile(r"^/audio/(\d+)\.([a-z]{2})\.([a-z0-9]+)$")
 
 
-def _make_process_request(broadcaster: Broadcaster):
+def _make_process_request(broadcaster: Broadcaster, mic_source=None):
     async def _process_request(connection: ServerConnection, request):
         """HTTP handler. /ws and /mic upgrade to WebSocket (return None);
         other paths return a plain HTTP response."""
@@ -175,6 +175,46 @@ def _make_process_request(broadcaster: Broadcaster):
             body = _read(SPEAKER_HTML)
             return Response(200, "OK", Headers([
                 ("Content-Type", "text/html; charset=utf-8"),
+                ("Content-Length", str(len(body))),
+                ("Cache-Control", "no-store"),
+            ]), body)
+        if path in ("/operator", "/op"):
+            body = _read(Path(__file__).parent / "templates" / "operator.html")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "text/html; charset=utf-8"),
+                ("Content-Length", str(len(body))),
+                ("Cache-Control", "no-store"),
+            ]), body)
+        if path.startswith("/api/") and request.method == "POST":
+            action = path[len("/api/"):]
+            src = mic_source
+            resp: dict = {"ok": False}
+            if src is not None and hasattr(src, "resume") and hasattr(src, "pause"):
+                if action == "start":
+                    src.resume(); resp = {"ok": True, "state": "running"}
+                elif action == "stop":
+                    src.pause(); resp = {"ok": True, "state": "paused"}
+                else:
+                    resp = {"ok": False, "error": f"unknown action {action!r}"}
+            else:
+                resp = {"ok": False, "error": "current source doesn't support start/stop"}
+            body = json.dumps(resp).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
+            ]), body)
+        if path == "/api/status":
+            src = mic_source
+            paused = getattr(src, "paused", None) if src else None
+            body = json.dumps({
+                "state": ("paused" if paused else "running") if paused is not None else "n/a",
+                "listeners": broadcaster.client_count,
+                "level_db": getattr(src, "last_db", -120.0) if src else -120.0,
+                "peak_db": getattr(src, "peak_hold_db", -120.0) if src else -120.0,
+                "in_speech": getattr(src, "in_speech", False) if src else False,
+            }).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
                 ("Content-Length", str(len(body))),
                 ("Cache-Control", "no-store"),
             ]), body)
@@ -376,7 +416,7 @@ async def _run_async(broadcaster: Broadcaster, binds: list[Bind],
                      stop: asyncio.Event, mic_source=None) -> None:
     asyncio.get_running_loop().set_exception_handler(_quiet_exception_handler)
     handler = _make_handler(broadcaster, mic_source)
-    process_request = _make_process_request(broadcaster)
+    process_request = _make_process_request(broadcaster, mic_source)
 
     from contextlib import AsyncExitStack
     async with AsyncExitStack() as stack:

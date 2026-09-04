@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sermon Translation - Speaker</title>
+<style>
+  :root {
+    --bg: #0b0b0b;
+    --panel: #171717;
+    --panel-live: #14243a;
+    --border: #262626;
+    --fg: #f2f2f2;
+    --muted: #8a8a8a;
+    --accent: #2b8dff;
+    --live: #35c46c;
+    --idle: #cf3a3a;
+    --amber: #e8b53a;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100vh;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+  }
+  body { display: grid; grid-template-rows: auto 1fr auto; }
+
+  header {
+    padding: 14px 22px; background: var(--panel); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 14px;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--idle); box-shadow: 0 0 8px currentColor; }
+  .dot.live { background: var(--live); }
+  h1 { font-size: 15px; font-weight: 600; letter-spacing: .4px; margin: 0; }
+  .spacer { flex: 1; }
+  .pill {
+    background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+    padding: 4px 12px; border-radius: 999px; font-size: 12px; color: var(--muted);
+  }
+
+  main {
+    padding: 30px; display: grid; grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto 1fr; gap: 22px; overflow: hidden;
+  }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 22px; overflow: hidden;
+  }
+  .card h3 {
+    margin: 0 0 14px; font-size: 11px; font-weight: 600;
+    color: var(--muted); letter-spacing: 1.2px; text-transform: uppercase;
+  }
+
+  /* -------- big control card (spans full width) -------- */
+  .control { grid-column: 1 / 3; text-align: center; padding: 26px; }
+  .btn {
+    background: var(--accent); color: white; border: none;
+    border-radius: 999px; padding: 18px 46px;
+    font-size: 18px; font-weight: 700; letter-spacing: .5px;
+    cursor: pointer; box-shadow: 0 6px 24px rgba(43,141,255,0.35);
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+  .btn:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
+  .btn.stop { background: #cf3a3a; box-shadow: 0 6px 24px rgba(207,58,58,0.35); }
+  .btn.stop:hover { background: #d84a4a; }
+  .btn:hover:not(:disabled) { filter: brightness(1.1); }
+
+  .state {
+    font-size: 13px; color: var(--muted); margin-top: 14px;
+  }
+  .state b { color: var(--fg); }
+
+  /* -------- meter -------- */
+  .meter-wrap { padding: 10px 0; }
+  .meter {
+    height: 22px; background: #0a0a0a; border-radius: 999px; overflow: hidden;
+    position: relative; border: 1px solid var(--border);
+  }
+  .meter .bar {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #35c46c 0%, #35c46c 60%, #e8b53a 80%, #e05656 100%);
+    transition: width 60ms linear;
+  }
+  .meter .thresh {
+    position: absolute; top: -4px; bottom: -4px; left: 12%;
+    width: 2px; background: rgba(255,255,255,0.35);
+  }
+  .meter-labels {
+    display: flex; justify-content: space-between; color: var(--muted);
+    font-size: 11px; margin-top: 6px;
+  }
+
+  /* -------- live sentence -------- */
+  .sentence-card { display: flex; flex-direction: column; }
+  .sentence-text {
+    font-size: clamp(18px, 2.3vw, 24px); line-height: 1.4;
+    word-wrap: break-word; flex: 1; display: flex;
+    align-items: center; padding: 8px 4px;
+  }
+  .sentence-text.empty { color: var(--muted); font-style: italic; font-size: 15px; }
+
+  /* -------- listeners & URLs -------- */
+  .urls { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px; }
+  .urls .row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #1c1c1c; }
+  .urls .row:last-child { border-bottom: none; }
+  .urls .label { color: var(--muted); }
+  .urls .val { color: var(--fg); }
+  .listener-count {
+    font-size: 42px; font-weight: 700; text-align: center;
+    color: var(--accent); margin: 8px 0;
+  }
+  .listener-count small { font-size: 13px; color: var(--muted); font-weight: 400; letter-spacing: .5px; display: block; text-transform: uppercase; margin-top: 4px; }
+
+  .toolbar {
+    display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap;
+  }
+  .toolbar a {
+    background: transparent; color: var(--fg); text-decoration: none;
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 14px; font-size: 12px;
+  }
+  .toolbar a:hover { border-color: var(--accent); color: var(--accent); }
+
+  footer {
+    padding: 12px 22px; background: var(--panel); border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 11px; text-align: center; letter-spacing: .3px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="dot" id="dot"></span>
+  <h1>Sermon Translation - Speaker</h1>
+  <span class="spacer"></span>
+  <span class="pill" id="model-pill">-</span>
+</header>
+
+<main>
+
+  <div class="card control">
+    <button class="btn" id="btn">Start</button>
+    <div class="state">Currently: <b id="state-text">paused</b>. Whatever the laptop is playing is captured and translated.</div>
+  </div>
+
+  <div class="card sentence-card">
+    <h3>Latest sentence</h3>
+    <div class="sentence-text empty" id="latest">waiting for audio to be started...</div>
+  </div>
+
+  <div class="card">
+    <h3>Audio level (loopback)</h3>
+    <div class="meter-wrap">
+      <div class="meter"><div class="bar" id="bar"></div><div class="thresh"></div></div>
+      <div class="meter-labels">
+        <span>-60 dBFS</span>
+        <span>quiet</span>
+        <span>-20</span>
+        <span>good</span>
+        <span>-3</span>
+        <span>clip</span>
+      </div>
+    </div>
+    <div class="listener-count" id="listeners">0<small>listeners connected</small></div>
+
+    <div class="urls" id="urls" style="margin-top:16px"></div>
+
+    <div class="toolbar">
+      <a href="/qr" target="_blank">Open QR page (project this)</a>
+      <a href="/" target="_blank">Preview listener page</a>
+    </div>
+  </div>
+
+</main>
+
+<footer>Nothing leaves this laptop. Server address shown above is your local Wi-Fi only.</footer>
+
+<script>
+"use strict";
+
+const $ = id => document.getElementById(id);
+const btn = $("btn"), stateText = $("state-text"), dot = $("dot");
+const bar = $("bar"), listeners = $("listeners"), latest = $("latest");
+const urls = $("urls"), modelPill = $("model-pill");
+
+let running = false;
+
+// -------- start/stop --------
+btn.addEventListener("click", async () => {
+  const action = running ? "stop" : "start";
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/" + action, { method: "POST" });
+    const j = await r.json();
+    if (!j.ok) { alert(j.error || "action failed"); return; }
+    setRunning(j.state === "running");
+  } catch (err) {
+    alert("Request failed: " + err);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function setRunning(on) {
+  running = on;
+  btn.textContent = on ? "Stop" : "Start";
+  btn.classList.toggle("stop", on);
+  stateText.textContent = on ? "capturing" : "paused";
+  dot.classList.toggle("live", on);
+}
+
+// -------- fill URLs from window.location + LAN address discovery --------
+// The listener/QR URLs need to use the LAN IP, not localhost, so a phone can
+// reach them. Ask the server for status which returns the LAN URLs it printed
+// at startup — cleanest source of truth. If unavailable, fall back to current
+// origin (works if you happen to already be on the LAN address).
+async function populateUrls() {
+  urls.innerHTML = `
+    <div class="row"><span class="label">Listener page</span><span class="val" id="url-listener">${location.origin}/</span></div>
+    <div class="row"><span class="label">QR display</span><span class="val" id="url-qr">${location.origin}/qr</span></div>`;
+}
+populateUrls();
+
+// -------- poll status --------
+async function poll() {
+  try {
+    const r = await fetch("/api/status");
+    const s = await r.json();
+    setRunning(s.state === "running");
+    listeners.innerHTML = s.listeners + "<small>listeners connected</small>";
+    const peak = s.peak_db;
+    // Map -60..0 dBFS to 0..100 %
+    const pct = Math.max(0, Math.min(100, (peak + 60) * 100 / 60));
+    bar.style.width = pct.toFixed(0) + "%";
+  } catch {}
+}
+setInterval(poll, 500);
+poll();
+
+// -------- receive translations via WS --------
+function connect() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  let ws;
+  try { ws = new WebSocket(proto + "//" + location.host + "/ws"); } catch { setTimeout(connect, 1000); return; }
+  ws.addEventListener("close", () => setTimeout(connect, 1000));
+  ws.addEventListener("message", ev => {
+    try {
+      const m = JSON.parse(ev.data);
+      if (m.type === "translation") {
+        const en = m.english || "";
+        latest.textContent = en;
+        latest.classList.remove("empty");
+      }
+    } catch {}
+  });
+}
+connect();
+</script>
+</body>
+</html>
