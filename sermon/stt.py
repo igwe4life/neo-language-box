@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from .config import STTConfig
+from .enlex import looks_english
 
 # Whisper is known to emit these when fed near-silence or noise. Real sermon
 # content that happens to match is a smaller cost than the false positives.
@@ -186,7 +187,7 @@ class ParakeetTranscriber(Transcriber):
         self.recognizer.decode_stream(stream)
         text = stream.result.text.strip()
 
-        if _is_hallucination(text):
+        if _is_hallucination(text) or not looks_english(text):
             text = ""
         return TranscriptionResult(
             text=text,
@@ -275,7 +276,7 @@ class FasterWhisperTranscriber(Transcriber):
                 continue
             keep.append(s.text.strip())
         text = " ".join(keep).strip()
-        if _is_hallucination(text):
+        if _is_hallucination(text) or not looks_english(text):
             text = ""
         return TranscriptionResult(
             text=text,
