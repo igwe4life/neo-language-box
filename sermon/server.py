@@ -31,6 +31,7 @@ import logging
 import socket
 import threading
 from collections import OrderedDict, deque
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -309,32 +310,69 @@ def _quiet_exception_handler(loop, context):
     loop.default_exception_handler(context)
 
 
-async def _run_async(broadcaster: Broadcaster, host: str, port: int,
-                     stop: asyncio.Event, mic_source=None, ssl_ctx=None) -> None:
+@dataclass
+class Bind:
+    """One (host, port, ssl) endpoint the server should listen on.
+
+    The packaged desktop app runs TWO binds: HTTPS on 0.0.0.0:8443 for phones
+    on the LAN, and HTTP on 127.0.0.1:8000 for the Tauri window's own webview
+    (loopback = secure context, so no self-signed cert warning inside the app).
+    """
+    host: str
+    port: int
+    ssl_ctx: Optional[object] = None       # ssl.SSLContext, kept as object to avoid the import here
+
+    @property
+    def scheme(self) -> str:
+        return "https" if self.ssl_ctx is not None else "http"
+
+
+async def _run_async(broadcaster: Broadcaster, binds: list[Bind],
+                     stop: asyncio.Event, mic_source=None) -> None:
     asyncio.get_running_loop().set_exception_handler(_quiet_exception_handler)
-    async with serve(_make_handler(broadcaster, mic_source), host, port,
-                     process_request=_make_process_request(broadcaster),
-                     ssl=ssl_ctx,
-                     ping_interval=20, ping_timeout=20,
-                     max_size=None,        # audio payloads bypass this, but be safe
-                     server_header="sermon-translation") as server:
+    handler = _make_handler(broadcaster, mic_source)
+    process_request = _make_process_request(broadcaster)
+
+    from contextlib import AsyncExitStack
+    async with AsyncExitStack() as stack:
+        for b in binds:
+            server = await stack.enter_async_context(serve(
+                handler, b.host, b.port,
+                process_request=process_request,
+                ssl=b.ssl_ctx,
+                ping_interval=20, ping_timeout=20,
+                max_size=None,
+                server_header="sermon-translation",
+            ))
+            _LOGGER.info("listening on %s://%s:%d", b.scheme, b.host, b.port)
         broadcaster.bind_loop(asyncio.get_running_loop())
-        _LOGGER.info("listening on %s:%d", host, port)
         await stop.wait()
-        server.close()
-        await server.wait_closed()
 
 
 class ServerHandle:
-    """Runs the server in a background thread. Call `.stop()` to shut down."""
+    """Runs the server in a background thread. Call `.stop()` to shut down.
 
-    def __init__(self, broadcaster: Broadcaster, host: str, port: int,
-                 mic_source=None, ssl_ctx=None):
+    Accepts either the single-bind shape (host, port, ssl_ctx) for backwards
+    compatibility, or an explicit `binds=[Bind(...), Bind(...)]` list for the
+    dual-bind desktop-app case.
+    """
+
+    def __init__(self, broadcaster: Broadcaster,
+                 host: str | None = None, port: int | None = None,
+                 mic_source=None, ssl_ctx=None,
+                 binds: Optional[list[Bind]] = None):
         self.broadcaster = broadcaster
-        self.host = host
-        self.port = port
         self.mic_source = mic_source
-        self.ssl_ctx = ssl_ctx
+        if binds is not None:
+            self.binds = list(binds)
+        else:
+            assert host is not None and port is not None, \
+                "ServerHandle needs either binds=[...] or host+port"
+            self.binds = [Bind(host, port, ssl_ctx)]
+        # Kept as attributes for callers that read .host/.port after construction
+        self.host = self.binds[0].host
+        self.port = self.binds[0].port
+        self.ssl_ctx = self.binds[0].ssl_ctx
         self._thread: Optional[threading.Thread] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._stop_event: Optional[asyncio.Event] = None
@@ -350,8 +388,8 @@ class ServerHandle:
             try:
                 loop.call_soon(self._ready.set)
                 loop.run_until_complete(
-                    _run_async(self.broadcaster, self.host, self.port,
-                               self._stop_event, self.mic_source, self.ssl_ctx))
+                    _run_async(self.broadcaster, self.binds,
+                               self._stop_event, self.mic_source))
             except BaseException as exc:
                 self._error = exc
                 self._ready.set()

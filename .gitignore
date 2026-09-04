@@ -5,3 +5,5 @@ models/
 certs/
 *.wav
 test_french.wav
+dist/
+build/

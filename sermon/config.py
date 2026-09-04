@@ -167,6 +167,7 @@ class ServerConfig:
     port: int = 8000
     history_size: int = 20     # translations replayed to a phone that joins mid-sermon
     tls: bool = False          # self-signed cert; needed for browser mic on non-localhost
+    loopback_port: int = 8000  # only used with --tauri: HTTP bind for the desktop-app webview
 
 
 @dataclass

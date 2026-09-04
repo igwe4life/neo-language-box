@@ -325,7 +325,7 @@ def cmd_live(args) -> int:
     broadcast_sink = None
 
     if cfg.server.enabled:
-        from sermon.server import Broadcaster, ServerHandle, list_local_ips
+        from sermon.server import Bind, Broadcaster, ServerHandle, list_local_ips
         from sermon.sinks import BroadcastSink
 
         broadcaster = Broadcaster(history_size=cfg.server.history_size)
@@ -335,10 +335,18 @@ def cmd_live(args) -> int:
             from sermon.tls import ssl_context
             from sermon.server import list_local_ips as _ips_for_cert
             ssl_ctx = ssl_context(_ips_for_cert())
+
+        # Build the bind list. Normal case: one bind (the port, TLS or not).
+        # Tauri desktop-app case: add a second bind on loopback HTTP so the
+        # embedded webview can hit http://127.0.0.1:8000/speaker without a
+        # self-signed cert warning (loopback = secure context regardless).
+        binds = [Bind(cfg.server.host, cfg.server.port, ssl_ctx)]
+        if getattr(args, "tauri", False):
+            binds.append(Bind("127.0.0.1", cfg.server.loopback_port, None))
+
         server_handle = ServerHandle(
-            broadcaster, cfg.server.host, cfg.server.port,
-            mic_source=source if use_network_mic else None,
-            ssl_ctx=ssl_ctx)
+            broadcaster, binds=binds,
+            mic_source=source if use_network_mic else None)
         try:
             server_handle.start()
         except OSError as exc:
@@ -552,6 +560,10 @@ def main(argv=None) -> int:
                           "when --source browser.")
     net.add_argument("--no-tls", action="store_true",
                      help="force plain HTTP even under --source browser")
+    net.add_argument("--tauri", action="store_true",
+                     help="desktop-app mode: also bind HTTP on 127.0.0.1 "
+                          "for the embedded webview (no cert warning); "
+                          "LAN listeners still get HTTPS")
 
     p.set_defaults(func=cmd_live)
 

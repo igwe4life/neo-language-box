@@ -197,11 +197,17 @@ class ParakeetTranscriber(Transcriber):
 
 
 def _download_silero() -> Path:
-    """Silero VAD is a tiny (~2 MB) ONNX model. Should be fetched via
-    fetch_models.py to avoid Python's cert-store issues on some Windows setups."""
-    dst = Path(__file__).resolve().parent.parent / "models" / "silero_vad.onnx"
+    """Silero VAD is a tiny (~2 MB) ONNX model. Located next to the OTHER
+    models so it moves with the models directory - important for the packaged
+    desktop app where models sit beside the .exe, not inside the source tree."""
+    from .config import DEFAULT_MODELS_DIR
+    dst = DEFAULT_MODELS_DIR / "silero_vad.onnx"
     if dst.exists() and dst.stat().st_size > 100_000:
         return dst
+    # Legacy fallback for anyone with the old dev-tree location
+    legacy = Path(__file__).resolve().parent.parent / "models" / "silero_vad.onnx"
+    if legacy.exists() and legacy.stat().st_size > 100_000:
+        return legacy
     raise FileNotFoundError(
         f"Silero VAD missing at {dst}. Fetch it once with:\n"
         "  curl -L https://github.com/snakers4/silero-vad/raw/v5.1/src/"
