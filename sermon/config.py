@@ -140,9 +140,12 @@ class TTSConfig:
     enabled: bool = False             # opt-in: --speak (laptop speaker playback)
     # One Piper voice per translation target. Every listed language gets audio
     # generated for phone-streaming; --speak still speaks only `voice` primary.
+    # NOTE: default is French-only. Piper occasionally deadlocks loading a
+    # second ONNX session on some Windows configs; Spanish listeners still get
+    # text translations, and their phone's own TTS voice (if any) can speak.
+    # To enable Spanish server audio explicitly, extend voices at runtime.
     voices: dict[str, str] = field(default_factory=lambda: {
         "fr": "fr_FR-siwis-medium",
-        "es": "es_ES-davefx-medium",
     })
     length_scale: float = 1.0         # >1 slower delivery
     volume: float = 1.0

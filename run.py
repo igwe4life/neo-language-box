@@ -358,7 +358,12 @@ def cmd_live(args) -> int:
         # A muted phone or a phone on a language we can't voice pays zero.
         audio_speakers: dict[str, "PiperSpeaker"] = {}
         if not args.no_audio:
+            import concurrent.futures
             from sermon.tts import PiperSpeaker
+
+            def _load_voice(mp, cfg_tts):
+                return PiperSpeaker(mp, cfg_tts)
+
             for t in targets:
                 if t not in cfg.tts.voices:
                     continue
@@ -370,11 +375,33 @@ def cmd_live(args) -> int:
                 t0 = time.perf_counter()
                 print(f"  Loading server voice for {t} ({cfg.tts.voices[t]})...",
                       end="", flush=True)
-                try:
-                    audio_speakers[t] = PiperSpeaker(model_path, cfg.tts)
+                # Voice loads run in a daemon thread with a hard timeout.
+                # Some machine states cause Piper's second ONNX session to
+                # deadlock during espeak-ng init; treating that as a skip
+                # keeps the pipeline usable (text still translates; the
+                # affected language just doesn't get server-generated audio).
+                # NOTE: not a ThreadPoolExecutor context manager - its __exit__
+                # blocks on the stuck worker forever.
+                import threading
+                result = {}
+                def _worker():
+                    try:
+                        result["speaker"] = _load_voice(model_path, cfg.tts)
+                    except Exception as exc:
+                        result["error"] = exc
+                th = threading.Thread(target=_worker, daemon=True, name=f"piper-load-{t}")
+                th.start()
+                th.join(timeout=30)
+                if "speaker" in result:
+                    audio_speakers[t] = result["speaker"]
                     print(f" {time.perf_counter() - t0:.1f}s")
-                except Exception as exc:
-                    print(f" failed ({exc})")
+                elif "error" in result:
+                    print(f" failed ({result['error']})")
+                else:
+                    print(f" TIMED OUT after 30s; skipping {t} audio (text still works).")
+                    # Thread is orphaned. Its C-level ONNX init is stuck; Python
+                    # can't join it. When the process exits, the daemon thread
+                    # dies with it. Meanwhile the pipeline keeps running.
 
         broadcast_sink = BroadcastSink(broadcaster, speakers=audio_speakers)
         sinks.append(broadcast_sink)

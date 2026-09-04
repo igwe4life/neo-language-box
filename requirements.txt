@@ -12,3 +12,5 @@ sounddevice>=0.4.6         # microphone capture (bundles PortAudio on Windows)
 numpy>=1.24,<3             # audio buffers + energy VAD
 psutil>=5.9                # diagnostics: RAM / CPU reporting
 huggingface-hub>=0.23      # one-time model download (offline afterwards)
+sherpa-onnx>=1.13,<2       # NVIDIA Parakeet STT (alternative to Whisper) + Silero VAD
+cryptography>=42           # self-signed TLS cert generation for LAN HTTPS
