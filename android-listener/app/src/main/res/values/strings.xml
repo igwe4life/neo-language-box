@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sermon Listener</string>
+    <string name="scan_qr">Scan QR code</string>
+    <string name="enter_manually">Enter URL manually</string>
+    <string name="url_hint">https://192.168.x.x:8443/</string>
+    <string name="connect">Connect</string>
+    <string name="change_server">Change server</string>
+    <string name="tap_scan">Scan the QR code on the screen where the speaker\'s laptop is projected.</string>
+</resources>

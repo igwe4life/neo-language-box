@@ -1,0 +1,6 @@
+// Top-level build file: intentionally minimal. Plugins declared here so
+// the AGP + Kotlin versions are pinned in one place.
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+    id 'org.jetbrains.kotlin.android' version '1.9.25' apply false
+}

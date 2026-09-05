@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext HTTP is normally banned on Android 9+. We allow it because the
+  translation server may be reached over plain HTTP inside the LAN when TLS
+  is disabled. HTTPS to the same server with a self-signed cert is handled
+  in MainActivity via WebViewClient.onReceivedSslError.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

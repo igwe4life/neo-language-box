@@ -7,3 +7,9 @@ certs/
 test_french.wav
 dist/
 build/
+tools/
+android-listener/.gradle/
+android-listener/app/build/
+android-listener/build/
+android-listener/local.properties
+*.keystore

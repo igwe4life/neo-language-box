@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Pairing screen shown when we don't have a saved server URL yet.
+  Two paths: scan a QR (default), or type a URL manually.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="24dp"
+    android:background="#000000">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/app_name"
+        android:textColor="#FFFFFF"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp"/>
+
+    <TextView
+        android:id="@+id/hint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/tap_scan"
+        android:textColor="#8A8A8A"
+        android:textSize="14sp"
+        android:gravity="center"
+        android:layout_marginBottom="36dp"
+        android:paddingHorizontal="8dp"/>
+
+    <Button
+        android:id="@+id/btn_scan"
+        style="@style/Widget.Material3.Button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/scan_qr"
+        android:textSize="16sp"
+        android:paddingHorizontal="32dp"
+        android:paddingVertical="14dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="or"
+        android:textColor="#5A5A5A"
+        android:textSize="13sp"
+        android:layout_marginTop="28dp"
+        android:layout_marginBottom="12dp"/>
+
+    <EditText
+        android:id="@+id/url_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/url_hint"
+        android:textColorHint="#5A5A5A"
+        android:textColor="#FFFFFF"
+        android:inputType="textUri"
+        android:background="#161616"
+        android:padding="14dp"
+        android:layout_marginHorizontal="24dp"/>
+
+    <Button
+        android:id="@+id/btn_connect"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/connect"
+        android:layout_marginTop="12dp"/>
+</LinearLayout>
