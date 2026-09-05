@@ -1,0 +1,78 @@
+; Inno Setup script for Sermon Translation Speaker.
+; Wraps the PyInstaller bundle (dist/SermonTranslationSpeaker/) plus the
+; models/ folder into a single .exe installer.
+;
+; Compile:  tools\innosetup\ISCC.exe installer.iss
+; Output:   dist/SermonTranslationSpeakerSetup.exe
+;
+; Design decisions
+; ----------------
+; * Per-user install by default (DefaultDirName -> LocalAppData). No admin
+;   elevation required to install or uninstall, which matches the "sideload
+;   unsigned" model.
+; * Compression: LZMA/max. The 1.5 GB payload compresses to ~1 GB.
+; * Desktop + Start Menu shortcuts, both point at the .exe.
+; * SetupIconFile omitted deliberately; installer uses a generic icon.
+
+#define AppName        "Sermon Translation Speaker"
+#define AppShortName   "SermonTranslation"
+#define AppVersion     "0.7.0"
+#define AppPublisher   "Sermon Translation"
+#define AppExeName     "SermonTranslationSpeaker.exe"
+
+[Setup]
+AppId={{A9C8E7B2-4F3D-4A8C-9E12-8F5B2C4D7E19}
+AppName={#AppName}
+AppVersion={#AppVersion}
+AppPublisher={#AppPublisher}
+AppSupportURL=https://example.local/
+DefaultDirName={localappdata}\{#AppShortName}
+DefaultGroupName={#AppName}
+DisableProgramGroupPage=yes
+DisableDirPage=no
+PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
+OutputBaseFilename=SermonTranslationSpeakerSetup
+OutputDir=dist
+Compression=lzma2/max
+SolidCompression=yes
+WizardStyle=modern
+UninstallDisplayIcon={app}\{#AppExeName}
+LicenseFile=
+UsePreviousAppDir=yes
+CloseApplications=yes
+RestartApplications=no
+; The compressed payload is large (~1 GB); disable the 3-second on-screen
+; "Ready to install" gate so users are not left staring at a spinner.
+DisableReadyPage=no
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Tasks]
+Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: checkedonce
+
+[Files]
+; The PyInstaller-produced folder, verbatim.
+Source: "dist\SermonTranslationSpeaker\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Models sit BESIDE the executable (see desktop_app.py _resolve_models_dir).
+; Included from the project's models/ folder so an install is fully self-
+; contained - no internet needed after install.
+Source: "models\*"; DestDir: "{app}\models"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Application vocab files (already inside the bundle's _internal/, but
+; also placed at the app root so `SERMON_VOCAB_FILE` overrides work).
+Source: "vocabulary.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "phrases.yo.txt";  DestDir: "{app}"; Flags: ignoreversion
+
+[Icons]
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
+Name: "{group}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
+Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+
+[Run]
+Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+; Runtime folders the app creates alongside itself
+Type: filesandordirs; Name: "{app}\certs"
+; Do NOT delete models/ - the user might reuse them for a reinstall
