@@ -73,6 +73,29 @@
   }
   .state b { color: var(--fg); }
 
+  /* -------- source picker -------- */
+  .source-row {
+    display: flex; align-items: center; justify-content: center;
+    gap: 10px; margin-top: 20px; flex-wrap: wrap;
+  }
+  .source-row label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1.1px;
+    color: var(--muted); font-weight: 600;
+  }
+  .source-row select {
+    background: #0f0f0f; color: var(--fg);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; max-width: 320px;
+    font-family: inherit;
+  }
+  .source-row select:focus { outline: none; border-color: var(--accent); }
+  .source-row select:disabled { opacity: .45; }
+  .src-error {
+    margin-top: 12px; font-size: 12px; color: #ff8f8f;
+    background: rgba(207,58,58,0.12); border: 1px solid rgba(207,58,58,0.35);
+    border-radius: 8px; padding: 8px 12px; display: inline-block;
+  }
+
   /* -------- meter -------- */
   .meter-wrap { padding: 10px 0; }
   .meter {
@@ -143,7 +166,18 @@
 
   <div class="card control">
     <button class="btn" id="btn">Start</button>
-    <div class="state">Currently: <b id="state-text">paused</b>. Whatever the laptop is playing is captured and translated.</div>
+
+    <div class="source-row">
+      <label for="src-kind">Audio source</label>
+      <select id="src-kind">
+        <option value="system">Laptop audio (what the laptop is playing)</option>
+        <option value="mic">Microphone / line-in</option>
+      </select>
+      <select id="src-device"><option value="">Default device</option></select>
+    </div>
+
+    <div class="state">Currently: <b id="state-text">paused</b> &middot; <span id="src-desc">laptop audio</span></div>
+    <div class="src-error" id="src-error" hidden></div>
   </div>
 
   <div class="card sentence-card">
@@ -152,7 +186,7 @@
   </div>
 
   <div class="card">
-    <h3>Audio level (loopback)</h3>
+    <h3 id="meter-title">Audio level (loopback)</h3>
     <div class="meter-wrap">
       <div class="meter"><div class="bar" id="bar"></div><div class="thresh"></div></div>
       <div class="meter-labels">
@@ -184,7 +218,7 @@
 const $ = id => document.getElementById(id);
 const btn = $("btn"), stateText = $("state-text"), dot = $("dot");
 const bar = $("bar"), listeners = $("listeners"), latest = $("latest");
-const urls = $("urls"), modelPill = $("model-pill");
+const urls = $("urls"), modelPill = $("model-pill"), meterTitle = $("meter-title");
 
 let running = false;
 
@@ -212,15 +246,85 @@ function setRunning(on) {
   dot.classList.toggle("live", on);
 }
 
-// -------- fill URLs from window.location + LAN address discovery --------
-// The listener/QR URLs need to use the LAN IP, not localhost, so a phone can
-// reach them. Ask the server for status which returns the LAN URLs it printed
-// at startup — cleanest source of truth. If unavailable, fall back to current
-// origin (works if you happen to already be on the LAN address).
+// -------- audio source picker --------
+// The app used to be hard-wired to WASAPI loopback, so a preacher speaking
+// into the laptop mic produced silence. Switching happens server-side and the
+// pipeline keeps running; only the capture backend is swapped.
+const srcKind = $("src-kind"), srcDevice = $("src-device"), srcDesc = $("src-desc");
+const srcError = $("src-error");
+let devices = { mics: [], loopbacks: [] };
+let applyingSource = false;
+
+async function loadDevices() {
+  try {
+    const r = await fetch("/api/devices");
+    devices = await r.json();
+  } catch { /* keep whatever we had */ }
+  fillDeviceList();
+}
+
+function fillDeviceList() {
+  const list = srcKind.value === "mic" ? (devices.mics || []) : (devices.loopbacks || []);
+  const label = srcKind.value === "mic" ? "Default microphone" : "Default output (follow system)";
+  const prev = srcDevice.value;
+  srcDevice.innerHTML = `<option value="">${label}</option>` +
+    list.map(d => `<option value="${escapeAttr(d.name)}">${escapeHtml(d.name)}</option>`).join("");
+  if ([...srcDevice.options].some(o => o.value === prev)) srcDevice.value = prev;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+const escapeAttr = escapeHtml;
+
+async function applySource() {
+  applyingSource = true;
+  srcKind.disabled = srcDevice.disabled = true;
+  srcError.hidden = true;
+  try {
+    const qs = new URLSearchParams({ kind: srcKind.value, device: srcDevice.value || "" });
+    const r = await fetch("/api/source?" + qs.toString(), { method: "POST" });
+    const j = await r.json();
+    if (!j.ok) {
+      srcError.textContent = "Could not switch source: " + (j.error || "unknown error");
+      srcError.hidden = false;
+      if (j.kind) srcKind.value = j.kind;   // server rolled back; reflect reality
+      fillDeviceList();
+    }
+  } catch (err) {
+    srcError.textContent = "Could not switch source: " + err;
+    srcError.hidden = false;
+  } finally {
+    srcKind.disabled = srcDevice.disabled = false;
+    applyingSource = false;
+  }
+}
+
+srcKind.addEventListener("change", () => { fillDeviceList(); applySource(); });
+srcDevice.addEventListener("change", applySource);
+loadDevices();
+
+// -------- listener URLs --------
+// These MUST be the LAN address, not location.origin: the operator window runs
+// on http://127.0.0.1:8000, and a phone cannot reach that. /api/net reports the
+// addresses the server is actually listening on for the LAN.
 async function populateUrls() {
-  urls.innerHTML = `
-    <div class="row"><span class="label">Listener page</span><span class="val" id="url-listener">${location.origin}/</span></div>
-    <div class="row"><span class="label">QR display</span><span class="val" id="url-qr">${location.origin}/qr</span></div>`;
+  let lan = [];
+  try {
+    const r = await fetch("/api/net");
+    lan = (await r.json()).lan || [];
+  } catch {}
+
+  if (!lan.length) {
+    urls.innerHTML = `<div class="row"><span class="label">Listener page</span>
+      <span class="val">no Wi-Fi address found</span></div>`;
+    return;
+  }
+  urls.innerHTML = lan.map(e => `
+    <div class="row"><span class="label">Listener page</span><span class="val">${escapeHtml(e.url)}</span></div>
+    <div class="row"><span class="label">QR display</span><span class="val">${escapeHtml(e.url)}qr</span></div>`
+  ).join("");
 }
 populateUrls();
 
@@ -231,6 +335,18 @@ async function poll() {
     const s = await r.json();
     setRunning(s.state === "running");
     listeners.innerHTML = s.listeners + "<small>listeners connected</small>";
+
+    // Reflect the server's actual source, but never fight the operator while
+    // they are mid-change.
+    if (!applyingSource && s.switchable) {
+      if (s.kind && srcKind.value !== s.kind) { srcKind.value = s.kind; fillDeviceList(); }
+      if (srcDevice.value !== (s.device || "")) srcDevice.value = s.device || "";
+    }
+    srcKind.disabled = srcDevice.disabled = applyingSource || !s.switchable;
+    srcDesc.textContent = s.kind === "mic"
+      ? "microphone" + (s.device ? " (" + s.device + ")" : "")
+      : "laptop audio" + (s.device ? " (" + s.device + ")" : "");
+    meterTitle.textContent = s.kind === "mic" ? "Audio level (microphone)" : "Audio level (loopback)";
     const peak = s.peak_db;
     // Map -60..0 dBFS to 0..100 %
     const pct = Math.max(0, Math.min(100, (peak + 60) * 100 / 60));

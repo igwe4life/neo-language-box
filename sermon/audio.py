@@ -433,6 +433,11 @@ class SystemAudioSource(MicrophoneSource):
         self._reader_thread = None
         self._pa_sample_rate = 48000
         self._pa_channels = 2
+        # Separate from `self._stop` (which ends the segmenter) so the capture
+        # backend can be torn down and rebuilt while the segmenter keeps
+        # running - that is what lets SelectableSource swap mic <-> loopback
+        # without dropping the pipeline.
+        self._capture_stop = threading.Event()
 
     # ---- pause / resume for the explicit Start button ---------------------
 
@@ -453,7 +458,21 @@ class SystemAudioSource(MicrophoneSource):
     # ---- lifecycle --------------------------------------------------------
 
     def start(self) -> None:
+        self._start_system_capture()
+
+        # Segmenter thread (inherited from MicrophoneSource) consumes _raw_q
+        self._thread = threading.Thread(target=self._segment_loop, daemon=True,
+                                        name="segmenter-sysaudio")
+        self._thread.start()
+
+    def _start_system_capture(self) -> None:
+        """Open the WASAPI loopback stream and spin up its reader thread.
+
+        Split out from `start()` so a switchable source can rebuild just the
+        capture backend without restarting the segmenter.
+        """
         import pyaudiowpatch as pyaudio
+        self._capture_stop = threading.Event()
         self._pa = pyaudio.PyAudio()
 
         # Find the loopback endpoint for the requested (or default) output.
@@ -473,25 +492,30 @@ class SystemAudioSource(MicrophoneSource):
         )
 
         # Reader thread pulls from PortAudio, feeds the segmenter
-        import threading
         self._reader_thread = threading.Thread(
             target=self._reader_loop, args=(frames_per_read,),
             daemon=True, name="audio-loopback")
         self._reader_thread.start()
 
-        # Segmenter thread (inherited from MicrophoneSource) consumes _raw_q
-        self._thread = threading.Thread(target=self._segment_loop, daemon=True,
-                                        name="segmenter-sysaudio")
-        self._thread.start()
-
-    def stop(self) -> None:
+    def _stop_system_capture(self) -> None:
         # Signal reader thread FIRST so it exits its read loop, then join it
         # BEFORE closing the PortAudio stream. Closing while a read is in
         # flight is the source of PyAudio's Windows-shutdown segfaults.
-        self._stop.set()
-        if self._reader_thread is not None:
-            self._reader_thread.join(timeout=2.0)
-            self._reader_thread = None
+        self._capture_stop.set()
+        reader = self._reader_thread
+        self._reader_thread = None
+        if reader is not None:
+            reader.join(timeout=2.0)
+            if reader.is_alive():
+                # The reader is wedged inside PortAudio. Closing the stream or
+                # terminating PortAudio now would free memory it is actively
+                # reading - an access violation that takes the whole process
+                # down. Leak the handles instead: a stalled stream costs a few
+                # MB, a segfault costs the service.
+                self.stream_warnings += 1
+                self._pa_stream = None
+                self._pa = None
+                return
         stream = self._pa_stream
         self._pa_stream = None
         if stream is not None:
@@ -503,6 +527,10 @@ class SystemAudioSource(MicrophoneSource):
             try: self._pa.terminate()
             except Exception: pass
             self._pa = None
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._stop_system_capture()
         if self._thread is not None:
             self._thread.join(timeout=1.5)
             self._thread = None
@@ -551,15 +579,25 @@ class SystemAudioSource(MicrophoneSource):
         ch = self._pa_channels
         ratio = 16000 / in_sr
 
-        while not self._stop.is_set():
+        while not self._capture_stop.is_set() and not self._stop.is_set():
             stream = self._pa_stream    # atomic snapshot; stop() may null it
             if stream is None:
                 return
             try:
+                # NEVER call read() without checking availability first. A
+                # WASAPI loopback endpoint delivers no packets at all while
+                # the machine is silent, so a blocking read() parks here
+                # indefinitely - the stop flag goes unnoticed, the join times
+                # out, and closing the stream under the in-flight read is an
+                # access violation. Polling keeps us responsive within ~5 ms.
+                if stream.get_read_available() < frames_per_read:
+                    time.sleep(0.005)
+                    continue
                 data = stream.read(frames_per_read, exception_on_overflow=False)
             except Exception:
                 # Stream was closed under us during shutdown - not a warning
-                if self._stop.is_set() or self._pa_stream is None:
+                if self._capture_stop.is_set() or self._stop.is_set() \
+                        or self._pa_stream is None:
                     return
                 self.stream_warnings += 1
                 continue
@@ -587,3 +625,182 @@ class SystemAudioSource(MicrophoneSource):
                     self._raw_q.put_nowait(chunk)
                 except queue.Full:
                     self.overflows += 1
+
+
+class SelectableSource(SystemAudioSource):
+    """One source whose CAPTURE BACKEND can be swapped while it runs.
+
+    The desktop app used to hard-wire WASAPI loopback, so it only heard audio
+    the laptop was *playing*. A preacher talking into the laptop's microphone
+    produced silence. This source keeps the segmenter, VAD and everything
+    downstream fixed and swaps only the producer feeding `_raw_q`:
+
+        "system" - WASAPI loopback: whatever the laptop is playing
+        "mic"    - a normal input device (built-in mic, USB mic, mixer feed)
+
+    Both backends deliver 16 kHz mono float32 blocks, so a switch is invisible
+    to the rest of the pipeline. `paused` still gates everything, which keeps
+    the operator UI's Start/Stop button working across both.
+    """
+
+    def __init__(self, cfg: AudioConfig, kind: str = "system",
+                 device_name: str | None = None):
+        super().__init__(cfg, device_name=device_name)
+        self.kind = kind
+        self.last_error: str | None = None
+        self._switch_lock = threading.Lock()
+        # The HTTP API is serving ~30s before run.py reaches `with source:`
+        # (model and voice loading sit in between), so the operator can pick a
+        # source before any stream exists. Until then a switch only records the
+        # choice; opening a device here would collide with the one start() is
+        # about to open.
+        self._started = False
+
+    # ---- capture backend selection ---------------------------------------
+
+    def _start_capture(self) -> None:
+        if self.kind == "system":
+            self._start_system_capture()
+        else:
+            self._start_mic_capture()
+
+    def _stop_capture(self) -> None:
+        if self.kind == "system":
+            self._stop_system_capture()
+        else:
+            self._stop_mic_capture()
+
+    def _start_mic_capture(self) -> None:
+        import sounddevice as sd
+        self._capture_stop = threading.Event()
+        # `device_name` from the UI is a substring match against the device
+        # list; falling back to cfg.device keeps CLI behaviour unchanged.
+        device = self.device_name if self.device_name is not None else self.cfg.device
+        self._stream = sd.InputStream(
+            samplerate=self.cfg.sample_rate,
+            channels=self.cfg.channels,
+            dtype="float32",
+            blocksize=self.blocksize,
+            device=device,
+            callback=self._callback,
+        )
+        self._stream.start()
+
+    def _stop_mic_capture(self) -> None:
+        self._capture_stop.set()
+        stream = self._stream
+        self._stream = None
+        if stream is not None:
+            try:
+                stream.stop()
+                stream.close()
+            except Exception:
+                pass
+
+    # ---- audio path -------------------------------------------------------
+
+    def _callback(self, indata, frames, time_info, status):  # PortAudio thread
+        # MicrophoneSource's callback has no pause gate; this source needs one
+        # so the operator's Stop button silences the mic backend too.
+        if status:
+            self.stream_warnings += 1
+        if self.paused:
+            return
+        try:
+            self._raw_q.put_nowait(indata[:, 0].copy())
+        except queue.Full:
+            self.overflows += 1
+
+    # ---- lifecycle --------------------------------------------------------
+
+    def start(self) -> None:
+        with self._switch_lock:
+            self._start_capture()
+            self._started = True
+        self._thread = threading.Thread(target=self._segment_loop, daemon=True,
+                                        name="segmenter")
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        with self._switch_lock:
+            self._started = False
+            try:
+                self._stop_capture()
+            except Exception:
+                pass
+        if self._thread is not None:
+            self._thread.join(timeout=1.5)
+            self._thread = None
+
+    # ---- runtime switching ------------------------------------------------
+
+    def set_input(self, kind: str, device_name: str | None = None) -> None:
+        """Swap the capture backend. Raises if the new backend won't open,
+        after restoring the previous one so the app is never left deaf."""
+        kind = (kind or "").strip().lower()
+        if kind not in ("system", "mic"):
+            raise ValueError(f"unknown source kind: {kind!r}")
+
+        with self._switch_lock:
+            if kind == self.kind and device_name == self.device_name:
+                return
+            if not self._started:
+                # Nothing is open yet; just record what start() should open.
+                self.kind, self.device_name = kind, device_name
+                self.last_error = None
+                return
+            prev_kind, prev_device = self.kind, self.device_name
+            was_running = not self.paused
+
+            # Gate the queue before tearing anything down so no block from the
+            # old backend lands in the middle of the new one's audio.
+            self.paused = True
+            try:
+                self._stop_capture()
+            except Exception:
+                pass
+            self._drain_raw()
+
+            self.kind, self.device_name = kind, device_name
+            try:
+                self._start_capture()
+            except Exception as exc:
+                self.last_error = f"{kind}: {exc}"
+                # Roll back so the operator keeps whatever was working.
+                self.kind, self.device_name = prev_kind, prev_device
+                try:
+                    self._start_capture()
+                except Exception:
+                    pass
+                self.paused = not was_running
+                raise
+            self.last_error = None
+            self.paused = not was_running
+
+    def _drain_raw(self) -> None:
+        try:
+            while True:
+                self._raw_q.get_nowait()
+        except Exception:
+            pass
+
+    # ---- device discovery for the operator UI ----------------------------
+
+    @staticmethod
+    def list_input_devices() -> list[dict]:
+        """Input devices suitable for the "mic" backend."""
+        import sounddevice as sd
+        out = []
+        try:
+            for i, d in enumerate(sd.query_devices()):
+                if int(d.get("max_input_channels", 0)) > 0:
+                    out.append({
+                        "index": i,
+                        "name": d["name"],
+                        "sample_rate": int(d.get("default_samplerate", 0)),
+                        "channels": int(d["max_input_channels"]),
+                    })
+        except Exception:
+            pass
+        return out

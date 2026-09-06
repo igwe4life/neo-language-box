@@ -259,7 +259,8 @@ def cmd_speak(args) -> int:
 
 
 def cmd_live(args) -> int:
-    from sermon.audio import MicrophoneSource, NetworkMicrophoneSource, SystemAudioSource
+    from sermon.audio import (MicrophoneSource, NetworkMicrophoneSource,
+                              SelectableSource, SystemAudioSource)
     from sermon.mt import MarianCT2Translator
     from sermon.pipeline import Pipeline
     from sermon.sinks import ConsoleSink
@@ -321,7 +322,11 @@ def cmd_live(args) -> int:
         print("  --source browser needs HTTPS for phone mic access. Turning --tls on.")
         cfg.server.tls = True
     if use_system_audio:
-        source = SystemAudioSource(cfg.audio)
+        # SelectableSource is a SystemAudioSource that can also drive a normal
+        # input device, switched from the operator UI at runtime. Starting in
+        # "system" mode keeps `--source system` behaving exactly as before,
+        # but the app is no longer deaf to the microphone.
+        source = SelectableSource(cfg.audio, kind="system")
         # System audio needs the explicit Start button; auto-serve so the
         # operator UI can talk to it.
         cfg.server.enabled = True
@@ -354,9 +359,13 @@ def cmd_live(args) -> int:
         if getattr(args, "tauri", False):
             binds.append(Bind("127.0.0.1", cfg.server.loopback_port, None))
 
+        # Every source the server may need to talk to (pause/resume, receive
+        # network mic frames, read live level) gets handed in. Previously we
+        # only did this for the network mic - which meant the operator UI's
+        # Start/Stop couldn't reach the SystemAudioSource.
         server_handle = ServerHandle(
             broadcaster, binds=binds,
-            mic_source=source if use_network_mic else None)
+            mic_source=source)
         try:
             server_handle.start()
         except OSError as exc:

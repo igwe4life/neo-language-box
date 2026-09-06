@@ -157,7 +157,7 @@ import re as _re
 _AUDIO_PATH = _re.compile(r"^/audio/(\d+)\.([a-z]{2})\.([a-z0-9]+)$")
 
 
-def _make_process_request(broadcaster: Broadcaster, mic_source=None):
+def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None):
     async def _process_request(connection: ServerConnection, request):
         """HTTP handler. /ws and /mic upgrade to WebSocket (return None);
         other paths return a plain HTTP response."""
@@ -188,16 +188,39 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None):
         if path.startswith("/api/") and request.method == "POST":
             action = path[len("/api/"):]
             src = mic_source
-            resp: dict = {"ok": False}
-            if src is not None and hasattr(src, "resume") and hasattr(src, "pause"):
+            resp: dict = {"ok": False, "error": "no audio source is running"}
+            if src is not None:
+                # Prefer explicit pause/resume (SystemAudioSource); fall back
+                # to mute/unmute on MicrophoneSource - functionally equivalent
+                # for the operator (audio in is gated either way).
                 if action == "start":
-                    src.resume(); resp = {"ok": True, "state": "running"}
+                    if hasattr(src, "resume"): src.resume()
+                    elif hasattr(src, "unmute"): src.unmute()
+                    resp = {"ok": True, "state": "running"}
                 elif action == "stop":
-                    src.pause(); resp = {"ok": True, "state": "paused"}
+                    if hasattr(src, "pause"): src.pause()
+                    elif hasattr(src, "mute"): src.mute()
+                    resp = {"ok": True, "state": "paused"}
+                elif action == "source":
+                    # Params ride in the query string: the websockets
+                    # process_request hook does not expose the request body.
+                    from urllib.parse import parse_qs, urlparse
+                    q = parse_qs(urlparse(request.path).query)
+                    kind = (q.get("kind") or [""])[0]
+                    device = (q.get("device") or [""])[0] or None
+                    if not hasattr(src, "set_input"):
+                        resp = {"ok": False,
+                                "error": "this audio source cannot be switched"}
+                    else:
+                        try:
+                            src.set_input(kind, device)
+                            resp = {"ok": True, "kind": src.kind,
+                                    "device": src.device_name}
+                        except Exception as exc:
+                            resp = {"ok": False, "error": str(exc),
+                                    "kind": getattr(src, "kind", None)}
                 else:
                     resp = {"ok": False, "error": f"unknown action {action!r}"}
-            else:
-                resp = {"ok": False, "error": "current source doesn't support start/stop"}
             body = json.dumps(resp).encode("utf-8")
             return Response(200, "OK", Headers([
                 ("Content-Type", "application/json"),
@@ -205,14 +228,70 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None):
             ]), body)
         if path == "/api/status":
             src = mic_source
-            paused = getattr(src, "paused", None) if src else None
+            # SystemAudioSource uses `paused`; MicrophoneSource uses `muted`.
+            # Either indicates "not currently forwarding audio downstream."
+            if src is None:
+                state = "n/a"
+            elif getattr(src, "paused", False) or getattr(src, "muted", False):
+                state = "paused"
+            else:
+                state = "running"
             body = json.dumps({
-                "state": ("paused" if paused else "running") if paused is not None else "n/a",
+                "state": state,
                 "listeners": broadcaster.client_count,
                 "level_db": getattr(src, "last_db", -120.0) if src else -120.0,
                 "peak_db": getattr(src, "peak_hold_db", -120.0) if src else -120.0,
                 "in_speech": getattr(src, "in_speech", False) if src else False,
+                "kind": getattr(src, "kind", None) if src else None,
+                "device": getattr(src, "device_name", None) if src else None,
+                "switchable": hasattr(src, "set_input") if src else False,
+                "source_error": getattr(src, "last_error", None) if src else None,
             }).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
+                ("Cache-Control", "no-store"),
+            ]), body)
+        if path == "/api/net":
+            # The URLs a PHONE should use. The operator window itself is on
+            # http://127.0.0.1:8000, so `location.origin` in the page is
+            # useless for handing out - this is the authoritative answer.
+            ips = list_local_ips()
+            lan = []
+            for b in (binds or []):
+                if b.host in ("127.0.0.1", "localhost", "::1"):
+                    continue
+                for ip in ips:
+                    lan.append({"url": f"{b.scheme}://{ip}:{b.port}/",
+                                "scheme": b.scheme, "ip": ip, "port": b.port})
+            body = json.dumps({
+                "lan": lan,
+                "ips": ips,
+                "listening": [f"{b.scheme}://{b.host}:{b.port}"
+                              for b in (binds or [])],
+            }).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
+                ("Cache-Control", "no-store"),
+            ]), body)
+        if path == "/api/devices":
+            # Both backends the operator can pick between. Enumeration can
+            # fail on odd driver states, so each side is guarded separately -
+            # a broken loopback list should not hide the microphones.
+            mics: list = []
+            loopbacks: list = []
+            try:
+                from sermon.audio import SelectableSource
+                mics = SelectableSource.list_input_devices()
+            except Exception as exc:
+                _LOGGER.warning("input device enumeration failed: %s", exc)
+            try:
+                from sermon.audio import SystemAudioSource
+                loopbacks = SystemAudioSource.list_loopback_devices()
+            except Exception as exc:
+                _LOGGER.warning("loopback device enumeration failed: %s", exc)
+            body = json.dumps({"mics": mics, "loopbacks": loopbacks}).encode("utf-8")
             return Response(200, "OK", Headers([
                 ("Content-Type", "application/json"),
                 ("Content-Length", str(len(body))),
@@ -234,13 +313,18 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None):
                 scheme = "https" if getattr(request, "extensions", None) is None else "https"
                 listener_url = f"https://{host_hdr}/"
             else:
+                # Reached over loopback (the desktop app's own webview), so the
+                # Host header names an address no phone can use. Build the URL
+                # from the real LAN bind instead of guessing a port.
                 ips = list_local_ips()
-                if ips:
-                    # First non-loopback address; assume the LAN HTTPS port
-                    from urllib.parse import urlparse
-                    host_only, _, port_str = host_hdr.partition(":")
-                    port = port_str or "8443"
-                    listener_url = f"https://{ips[0]}:{port}/"
+                lan_bind = next((b for b in (binds or [])
+                                 if b.host not in ("127.0.0.1", "localhost", "::1")),
+                                None)
+                if ips and lan_bind is not None:
+                    listener_url = f"{lan_bind.scheme}://{ips[0]}:{lan_bind.port}/"
+                elif ips:
+                    _, _, port_str = host_hdr.partition(":")
+                    listener_url = f"https://{ips[0]}:{port_str or '8443'}/"
             if not listener_url:
                 listener_url = "https://<no-lan-ip>/"
             page = _read(QR_HTML).decode("utf-8")
@@ -416,7 +500,7 @@ async def _run_async(broadcaster: Broadcaster, binds: list[Bind],
                      stop: asyncio.Event, mic_source=None) -> None:
     asyncio.get_running_loop().set_exception_handler(_quiet_exception_handler)
     handler = _make_handler(broadcaster, mic_source)
-    process_request = _make_process_request(broadcaster, mic_source)
+    process_request = _make_process_request(broadcaster, mic_source, binds)
 
     from contextlib import AsyncExitStack
     async with AsyncExitStack() as stack:
