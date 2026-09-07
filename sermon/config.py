@@ -154,18 +154,43 @@ class MTConfig:
         return self.targets[0] if self.targets else "fr"
 
 
+ALL_VOICES = {
+    "fr": "fr_FR-siwis-medium",
+    "es": "es_ES-davefx-medium",
+}
+
+
+def _voices_from_env() -> dict[str, str]:
+    """Server-synth voices, optionally narrowed by SERMON_VOICES.
+
+    SERMON_VOICES=fr      -> French audio only (Spanish falls back to the
+                             listener's own phone voice)
+    SERMON_VOICES=fr,es   -> both (the default)
+    """
+    raw = (os.environ.get("SERMON_VOICES") or "").strip()
+    if not raw:
+        return dict(ALL_VOICES)
+    picked = {}
+    for code in (c.strip().lower() for c in raw.split(",")):
+        if code in ALL_VOICES:
+            picked[code] = ALL_VOICES[code]
+    return picked or dict(ALL_VOICES)
+
+
 @dataclass
 class TTSConfig:
     enabled: bool = False             # opt-in: --speak (laptop speaker playback)
     # One Piper voice per translation target. Every listed language gets audio
     # generated for phone-streaming; --speak still speaks only `voice` primary.
-    # NOTE: default is French-only. Piper occasionally deadlocks loading a
-    # second ONNX session on some Windows configs; Spanish listeners still get
-    # text translations, and their phone's own TTS voice (if any) can speak.
-    # To enable Spanish server audio explicitly, extend voices at runtime.
-    voices: dict[str, str] = field(default_factory=lambda: {
-        "fr": "fr_FR-siwis-medium",
-    })
+    #
+    # French AND Spanish by default. This was French-only for a while because
+    # Piper can deadlock loading a second ONNX session on some Windows configs,
+    # which left Spanish listeners on their phone's own robotic voice. Loading
+    # both is now guarded by a 30s-per-voice timeout in run.py, so the bad case
+    # costs a slow startup and falls back to whatever loaded - it cannot hang
+    # the app. Set SERMON_VOICES=fr to skip the attempt entirely on a machine
+    # where it does misbehave.
+    voices: dict[str, str] = field(default_factory=lambda: _voices_from_env())
     length_scale: float = 1.0         # >1 slower delivery
     volume: float = 1.0
     output_device: int | None = None
