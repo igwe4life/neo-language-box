@@ -46,6 +46,38 @@ def _resolve_models_dir() -> Path:
     return Path.cwd() / "models"
 
 
+DEFAULT_STT = "parakeet-0.6b"
+VALID_STT = {"parakeet-0.6b", "parakeet-110m",
+             "whisper-tiny.en", "whisper-base.en", "whisper-small.en"}
+
+
+def _stt_choice() -> str:
+    """Which recognition engine to run.
+
+    Default is Parakeet 0.6b. Measured on this laptop, end to end from the
+    moment a sentence finishes to its translation being ready:
+
+        whisper-base.en   2.6 - 2.7 s      (previous default)
+        parakeet-0.6b     1.2 - 1.7 s      accuracy held up
+        parakeet-110m     0.5 - 0.9 s      fastest, but dropped proper nouns
+
+    Whisper's encoder always runs on a 30 s padded mel, so a short sentence
+    pays the same as a long one - which is why it lagged. The trade-off going
+    to Parakeet is that it has no vocabulary-prompt support, so terms in
+    vocabulary.txt no longer bias recognition; the phrase-override table still
+    applies on the way out.
+
+    Overridable without a rebuild:  set SERMON_STT before launching.
+    """
+    choice = (os.environ.get("SERMON_STT") or "").strip()
+    if choice in VALID_STT:
+        return choice
+    if choice:
+        print(f"[desktop] ignoring SERMON_STT={choice!r}; "
+              f"expected one of {sorted(VALID_STT)}")
+    return DEFAULT_STT
+
+
 def _start_server_thread() -> threading.Thread:
     """Kick off the pipeline in a daemon thread.
 
@@ -61,7 +93,7 @@ def _start_server_thread() -> threading.Thread:
             "--source", "system",
             "--tls",
             "--tauri",              # add loopback HTTP bind for the webview
-            "--stt", "whisper-base.en",
+            "--stt", _stt_choice(),
         ]
         from run import main as run_main
         try:

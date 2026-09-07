@@ -267,9 +267,18 @@ function fillDeviceList() {
   const list = srcKind.value === "mic" ? (devices.mics || []) : (devices.loopbacks || []);
   const label = srcKind.value === "mic" ? "Default microphone" : "Default output (follow system)";
   const prev = srcDevice.value;
+  // Value is the INDEX, not the name: Windows lists the same hardware once per
+  // host API, so names collide and a name-keyed pick lands on the wrong one.
   srcDevice.innerHTML = `<option value="">${label}</option>` +
-    list.map(d => `<option value="${escapeAttr(d.name)}">${escapeHtml(d.name)}</option>`).join("");
+    list.map(d => `<option value="${d.index}">${escapeHtml(d.name)}</option>`).join("");
   if ([...srcDevice.options].some(o => o.value === prev)) srcDevice.value = prev;
+}
+
+// The server reports the device as an index; show the human name for it.
+function deviceLabel(kind, value) {
+  const list = kind === "mic" ? (devices.mics || []) : (devices.loopbacks || []);
+  const hit = list.find(d => String(d.index) === String(value));
+  return hit ? hit.name : value;
 }
 
 function escapeHtml(s) {
@@ -343,9 +352,8 @@ async function poll() {
       if (srcDevice.value !== (s.device || "")) srcDevice.value = s.device || "";
     }
     srcKind.disabled = srcDevice.disabled = applyingSource || !s.switchable;
-    srcDesc.textContent = s.kind === "mic"
-      ? "microphone" + (s.device ? " (" + s.device + ")" : "")
-      : "laptop audio" + (s.device ? " (" + s.device + ")" : "");
+    srcDesc.textContent = (s.kind === "mic" ? "microphone" : "laptop audio")
+      + (s.device ? " (" + deviceLabel(s.kind, s.device) + ")" : "");
     meterTitle.textContent = s.kind === "mic" ? "Audio level (microphone)" : "Audio level (loopback)";
     const peak = s.peak_db;
     // Map -60..0 dBFS to 0..100 %

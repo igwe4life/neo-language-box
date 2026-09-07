@@ -177,27 +177,38 @@ class BroadcastSink(Sink):
 
     def emit(self, result: PipelineResult) -> None:
         self.counter += 1
+        counter = self.counter
+        pending = [lang for lang in self.speakers
+                   if result.translations.get(lang)]
         message = {
             "type": "translation",
-            "id": self.counter,
+            "id": counter,
             "timestamp": datetime.now().strftime("%H:%M:%S"),
             "english": result.english,
             "audio_seconds": round(result.audio_seconds, 1),
             "latency": round(result.total_latency, 2),
         }
         message.update(result.translations)
+        # Tell the phone which languages have audio coming, so it shows the
+        # text now and waits for the clip instead of racing ahead with the
+        # browser's own robotic voice.
+        if pending:
+            message["audio_pending"] = pending
 
-        for lang, speaker in self.speakers.items():
-            text = result.translations.get(lang, "")
-            if not text:
-                continue
+        # Send the TEXT first. Synthesis costs ~2s for two languages on this
+        # laptop, and every phone used to sit on a blank screen for all of it.
+        self.broadcaster.broadcast(message)
+
+        if not pending:
+            return
+        urls: dict[str, str] = {}
+        for lang in pending:
             try:
-                speech = speaker.synthesize(text)
+                speech = self.speakers[lang].synthesize(result.translations[lang])
                 if speech.audio.size:
                     wav = _encode_wav_int16(speech.audio, speech.sample_rate)
-                    url = self.broadcaster.store_audio(
-                        self.counter, lang, "audio/wav", wav)
-                    message[f"audio_{lang}"] = url
+                    urls[f"audio_{lang}"] = self.broadcaster.store_audio(
+                        counter, lang, "audio/wav", wav)
                     self.audio_generated += 1
                     self.audio_seconds_generated += speech.duration
                     self.synth_seconds += speech.compute_seconds
@@ -205,8 +216,10 @@ class BroadcastSink(Sink):
                 self.synth_failures += 1
                 print(f"\n  !! server audio failed for {lang}: {exc}",
                       file=sys.stderr)
-
-        self.broadcaster.broadcast(message)
+        # Sent even when every synthesis failed: the message is what releases
+        # the phone from waiting, and an empty one tells it to fall back to
+        # its own voice rather than stay silent.
+        self.broadcaster.broadcast_audio(counter, urls)
 
 
 def _encode_wav_int16(audio, sample_rate: int) -> bytes:

@@ -56,6 +56,25 @@ class AudioConfig:
 
     queue_size: int = 3               # pending utterances; oldest dropped when full
 
+    def tune_for_low_latency(self) -> None:
+        """Shorten utterances. Only safe on an engine with no fixed per-call cost.
+
+        The defaults above deliberately buffer through pauses because
+        faster-whisper pays its encoder on a 30 s padded mel no matter how
+        little audio you give it: measured on this laptop, base.en costs 2.74 s
+        for a 4.7 s clip and only 3.26 s for an 11.1 s one. Short utterances
+        would spend nearly all their time on that fixed cost.
+
+        Parakeet has no such floor - it is linear and ~8x cheaper (0.35 s for
+        the same 4.7 s clip), so the reason for the long buffering disappears
+        and the segmentation delay becomes the thing worth cutting. Waiting
+        1.3 s to decide a sentence ended is most of the perceived lag.
+        """
+        self.min_utterance_s = 2.0     # was 5.0 - end short sentences promptly
+        self.silence_ms = 450          # was 600
+        self.long_silence_ms = 800     # was 1300 - dominates felt latency
+        self.max_utterance_s = 8.0     # was 14.0 - bounds the worst case
+
 
 # Whisper accepts a short prompt that biases its vocabulary. Naming the domain
 # terms it would otherwise guess at is the cheapest accuracy win available -

@@ -41,6 +41,10 @@ def build_config(args) -> AppConfig:
             return 2
     if getattr(args, "model", None):
         cfg.stt.model = args.model
+    # Engine chosen; now pick a segmentation strategy that suits its cost
+    # curve. Explicit --silence/--min-utterance flags below still win.
+    if cfg.stt.engine == "parakeet" and not getattr(args, "long_utterances", False):
+        cfg.audio.tune_for_low_latency()
     if getattr(args, "device", None) is not None:
         cfg.audio.device = args.device
     if getattr(args, "threads", None):
@@ -561,6 +565,9 @@ def main(argv=None) -> int:
                         "raise it for better accuracy, lower it for less lag")
     p.add_argument("--max-utterance", type=float, metavar="S",
                    help="hard flush for unbroken speech (default 14)")
+    p.add_argument("--long-utterances", action="store_true",
+                   help="keep Whisper's longer-utterance segmentation even on "
+                        "Parakeet: more context per utterance, more lag")
     p.add_argument("--threshold", type=float, metavar="DB",
                    help="dB above noise floor counted as speech (default 7)")
     p.add_argument("--beam", type=int, help="Whisper beam size (default 5; 1 = greedy)")

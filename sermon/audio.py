@@ -649,6 +649,11 @@ class SelectableSource(SystemAudioSource):
         self.kind = kind
         self.last_error: str | None = None
         self._switch_lock = threading.Lock()
+        # Mic backend format. Set at open time: a device that refuses 16 kHz
+        # mono is driven at its native format and converted in the callback.
+        self._mic_rate = cfg.sample_rate
+        self._mic_channels = 1
+        self._mic_native = False
         # The HTTP API is serving ~30s before run.py reaches `with source:`
         # (model and voice loading sit in between), so the operator can pick a
         # source before any stream exists. Until then a switch only records the
@@ -670,17 +675,61 @@ class SelectableSource(SystemAudioSource):
         else:
             self._stop_mic_capture()
 
+    @staticmethod
+    def _resolve_input_device(name: str | None, fallback):
+        """Device selector -> stable index.
+
+        Windows lists the same hardware once per host API, so names are NOT
+        unique - this laptop shows two inputs called "Microphone (4- High
+        Definition Audio Device)" with different capabilities. The UI therefore
+        sends the index, and a name is only accepted as a fallback for CLI use.
+        """
+        if name is None or name == "":
+            return fallback
+        import sounddevice as sd
+        if isinstance(name, int) or str(name).isdigit():
+            return int(name)
+        devices = sd.query_devices()
+        for i, d in enumerate(devices):                     # exact first
+            if d["max_input_channels"] > 0 and d["name"] == name:
+                return i
+        low = str(name).lower()
+        for i, d in enumerate(devices):                     # then substring
+            if d["max_input_channels"] > 0 and low in d["name"].lower():
+                return i
+        raise RuntimeError(f"No input device matching {name!r}")
+
     def _start_mic_capture(self) -> None:
         import sounddevice as sd
         self._capture_stop = threading.Event()
-        # `device_name` from the UI is a substring match against the device
-        # list; falling back to cfg.device keeps CLI behaviour unchanged.
-        device = self.device_name if self.device_name is not None else self.cfg.device
+        device = self._resolve_input_device(self.device_name, self.cfg.device)
+
+        # Prefer 16 kHz mono: it is what the pipeline wants and costs no
+        # conversion. But line-in on a mixer, and most USB capture cards, are
+        # 48 kHz stereo devices that flatly refuse 16 kHz mono - on this laptop
+        # alone two of six inputs reject it ("Invalid sample rate", "Sample
+        # format not supported"). Every device accepts its NATIVE format, so
+        # fall back to that and downmix/resample in the callback, exactly as
+        # the WASAPI loopback path already does.
+        rate, channels = self.cfg.sample_rate, self.cfg.channels
+        try:
+            sd.check_input_settings(device=device, channels=channels,
+                                    samplerate=rate, dtype="float32")
+        except Exception:
+            info = sd.query_devices(device)
+            rate = int(info["default_samplerate"])
+            channels = min(2, int(info["max_input_channels"])) or 1
+            sd.check_input_settings(device=device, channels=channels,
+                                    samplerate=rate, dtype="float32")
+
+        self._mic_rate = rate
+        self._mic_channels = channels
+        self._mic_native = (rate != self.cfg.sample_rate or channels != 1)
         self._stream = sd.InputStream(
-            samplerate=self.cfg.sample_rate,
-            channels=self.cfg.channels,
+            samplerate=rate,
+            channels=channels,
             dtype="float32",
-            blocksize=self.blocksize,
+            blocksize=int(rate * self.cfg.block_ms / 1000),
             device=device,
             callback=self._callback,
         )
@@ -706,10 +755,30 @@ class SelectableSource(SystemAudioSource):
             self.stream_warnings += 1
         if self.paused:
             return
+        if self._mic_native:
+            block = indata.mean(axis=1) if self._mic_channels > 1 else indata[:, 0]
+            block = self._to_16k(block)
+        else:
+            block = indata[:, 0].copy()
         try:
-            self._raw_q.put_nowait(indata[:, 0].copy())
+            self._raw_q.put_nowait(block)
         except queue.Full:
             self.overflows += 1
+
+    def _to_16k(self, block: np.ndarray) -> np.ndarray:
+        """Linear resample to the pipeline's 16 kHz. Cheap enough for the
+        PortAudio thread: a 30 ms block is ~1400 samples."""
+        target = self.cfg.sample_rate
+        if self._mic_rate == target:
+            return block.astype(np.float32, copy=True)
+        n_out = int(block.size * target / self._mic_rate)
+        if n_out <= 0:
+            return np.zeros(0, dtype=np.float32)
+        return np.interp(
+            np.linspace(0, 1, n_out, endpoint=False),
+            np.linspace(0, 1, block.size, endpoint=False),
+            block,
+        ).astype(np.float32)
 
     # ---- lifecycle --------------------------------------------------------
 

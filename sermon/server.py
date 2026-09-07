@@ -128,6 +128,30 @@ class Broadcaster:
         except RuntimeError:
             self.total_dropped += 1
 
+    def broadcast_audio(self, translation_id: int, urls: dict) -> None:
+        """Second-stage message: the audio clips for an already-sent sentence.
+
+        Text goes out the moment translation finishes; synthesis follows and
+        lands here. The matching history entry is patched in place so a phone
+        that joins later still receives one complete message.
+        """
+        with self._lock:
+            for entry in self._history:
+                if entry.get("id") == translation_id:
+                    entry.update(urls)
+                    entry.pop("audio_pending", None)
+                    break
+        loop = self._loop
+        if loop is None:
+            self.total_dropped += 1
+            return
+        payload = json.dumps({"type": "audio", "id": translation_id, **urls},
+                             ensure_ascii=False)
+        try:
+            asyncio.run_coroutine_threadsafe(self._deliver(payload), loop)
+        except RuntimeError:
+            self.total_dropped += 1
+
     def store_audio(self, translation_id: int, lang: str, mime: str, data: bytes) -> str:
         """Cache an audio clip and return the URL a phone should fetch."""
         key = (translation_id, lang)
