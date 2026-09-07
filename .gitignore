@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 models/
+models_unused/
 certs/
 *.wav
 test_french.wav

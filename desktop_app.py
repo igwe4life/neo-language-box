@@ -47,8 +47,11 @@ def _resolve_models_dir() -> Path:
 
 
 DEFAULT_STT = "parakeet-0.6b"
-VALID_STT = {"parakeet-0.6b", "parakeet-110m",
-             "whisper-tiny.en", "whisper-base.en", "whisper-small.en"}
+# Only engines whose weights are actually in the installer. whisper-small.en
+# is deliberately absent: it needed 9.3s to transcribe a 4.7s clip on this
+# hardware, so shipping 464MB for it bought nothing. whisper-tiny.en was
+# never bundled at all.
+VALID_STT = {"parakeet-0.6b", "parakeet-110m", "whisper-base.en"}
 
 
 def _stt_choice() -> str:
