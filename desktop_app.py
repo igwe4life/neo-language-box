@@ -23,9 +23,37 @@ from pathlib import Path
 
 APP_TITLE = "Sermon Translation - Speaker"
 LOOPBACK_HOST = "127.0.0.1"
-LOOPBACK_PORT = 8000
+PREFERRED_PORT = 8000
 WINDOW_WIDTH = 980
 WINDOW_HEIGHT = 720
+
+# Resolved at startup by _pick_port(); the window and the status poll both
+# need to agree with whatever the server actually bound.
+LOOPBACK_PORT = PREFERRED_PORT
+
+
+def _pick_port(preferred: int = PREFERRED_PORT, tries: int = 12) -> int:
+    """First port free on BOTH the LAN and loopback binds.
+
+    8000 is a popular port - a local PHP or Node project sitting on it used to
+    make this app start, announce a listener URL, and serve nothing, because
+    the bind failure happened on a background thread. Rather than fail, take
+    the next free port; phones are handed the real address by /api/net and the
+    QR page, so nothing downstream cares which one it is.
+    """
+    import socket
+    for port in range(preferred, preferred + tries):
+        try:
+            for host in ("0.0.0.0", LOOPBACK_HOST):
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                try:
+                    s.bind((host, port))
+                finally:
+                    s.close()
+            return port
+        except OSError:
+            continue
+    return preferred          # nothing free; let the server report the error
 
 
 def _bundled_root() -> Path:
@@ -93,6 +121,7 @@ def _start_server_thread() -> threading.Thread:
         sys.argv = [
             "run.py",
             "--serve",
+            "--port", str(LOOPBACK_PORT),
             "--source", "system",
             "--tls",
             "--tauri",              # add loopback HTTP bind for the webview
@@ -126,7 +155,11 @@ def _wait_for_server(timeout: float = 60.0) -> bool:
 
 
 def main() -> int:
+    global LOOPBACK_PORT
     os.environ.setdefault("SERMON_MODELS_DIR", str(_resolve_models_dir()))
+    LOOPBACK_PORT = _pick_port()
+    if LOOPBACK_PORT != PREFERRED_PORT:
+        print(f"[desktop] port {PREFERRED_PORT} is in use; serving on {LOOPBACK_PORT}")
 
     print(f"[desktop] launching server (models dir: {os.environ['SERMON_MODELS_DIR']})")
     _start_server_thread()
