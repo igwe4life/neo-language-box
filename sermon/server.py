@@ -71,9 +71,18 @@ class Broadcaster:
 
     def __init__(self, history_size: int = 20, audio_size: int = 30):
         self._clients: set[ServerConnection] = set()
+        # Which language each connected phone is listening to, so the pipeline
+        # can skip synthesising audio nobody will play. Keyed by connection so
+        # a disconnect releases its claim automatically.
+        self._client_lang: "dict[ServerConnection, str]" = {}
         self._history: deque = deque(maxlen=history_size)
         self._audio: "OrderedDict[tuple[int, str], tuple[str, bytes]]" = OrderedDict()
         self._audio_size = audio_size
+        # What the listener UI should offer. Set by run.py once it knows which
+        # models actually loaded, so a language whose model is missing is never
+        # shown as a choice.
+        self.languages: list[str] = []
+        self.language_meta: dict = {}
         self._lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self.total_delivered = 0
@@ -97,10 +106,25 @@ class Broadcaster:
         with self._lock:
             history = list(self._history)
         await ws.send(json.dumps({"type": "welcome", "history": history,
-                                  "targets": ["fr", "es"]}))
+                                  "targets": list(self.languages),
+                                  "languages": self.language_meta},
+                                 ensure_ascii=False))
 
     def unregister(self, ws: ServerConnection) -> None:
         self._clients.discard(ws)
+        self._client_lang.pop(ws, None)
+
+    def set_client_language(self, ws: ServerConnection, lang: str) -> None:
+        """Record what a listener selected. Drives which languages get audio."""
+        self._client_lang[ws] = lang
+
+    def active_languages(self) -> set:
+        """Languages at least one connected listener has selected.
+
+        Called from the pipeline thread while the asyncio loop may be mutating
+        the map, so take a snapshot rather than iterating it live.
+        """
+        return set(list(self._client_lang.values()))
 
     async def _deliver(self, payload: str) -> None:
         dead: list[ServerConnection] = []
@@ -417,8 +441,18 @@ def _make_handler(broadcaster: Broadcaster, mic_source=None):
 async def _listener_handler(ws: ServerConnection, broadcaster: Broadcaster) -> None:
     await broadcaster.register(ws)
     try:
-        async for _ in ws:
-            pass   # ignore anything the client sends
+        async for raw in ws:
+            # The only thing a listener tells us is which language it is on,
+            # so the pipeline can skip synthesising audio nobody will play.
+            # Anything else is ignored - this is an untrusted input.
+            try:
+                msg = json.loads(raw)
+            except Exception:
+                continue
+            if isinstance(msg, dict) and msg.get("type") == "lang":
+                lang = msg.get("lang")
+                if isinstance(lang, str) and 0 < len(lang) <= 8:
+                    broadcaster.set_client_language(ws, lang)
     except Exception:
         pass
     finally:
@@ -521,7 +555,8 @@ class Bind:
 
 
 async def _run_async(broadcaster: Broadcaster, binds: list[Bind],
-                     stop: asyncio.Event, mic_source=None) -> None:
+                     stop: asyncio.Event, mic_source=None,
+                     ready: "threading.Event | None" = None) -> None:
     asyncio.get_running_loop().set_exception_handler(_quiet_exception_handler)
     handler = _make_handler(broadcaster, mic_source)
     process_request = _make_process_request(broadcaster, mic_source, binds)
@@ -539,6 +574,11 @@ async def _run_async(broadcaster: Broadcaster, binds: list[Bind],
             ))
             _LOGGER.info("listening on %s://%s:%d", b.scheme, b.host, b.port)
         broadcaster.bind_loop(asyncio.get_running_loop())
+        # Only NOW is the server actually serving. Signalling readiness any
+        # earlier makes a failed bind invisible: start() returns happily, the
+        # operator is told the listener URL, and nothing is listening on it.
+        if ready is not None:
+            ready.set()
         await stop.wait()
 
 
@@ -572,21 +612,21 @@ class ServerHandle:
         self._error: Optional[BaseException] = None
         self._ready = threading.Event()
 
-    def start(self, timeout: float = 5.0) -> None:
+    def start(self, timeout: float = 15.0) -> None:
         def _target():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             self._loop = loop
             self._stop_event = asyncio.Event()
             try:
-                loop.call_soon(self._ready.set)
                 loop.run_until_complete(
                     _run_async(self.broadcaster, self.binds,
-                               self._stop_event, self.mic_source))
+                               self._stop_event, self.mic_source,
+                               self._ready))
             except BaseException as exc:
                 self._error = exc
-                self._ready.set()
             finally:
+                self._ready.set()      # unblock start() on success OR failure
                 try:
                     loop.close()
                 except Exception:
@@ -598,6 +638,16 @@ class ServerHandle:
         self._ready.wait(timeout=timeout)
         if self._error is not None:
             raise self._error
+        if not self.listening:
+            raise OSError(
+                f"server did not start within {timeout:.0f}s on "
+                + ", ".join(f"{b.scheme}://{b.host}:{b.port}" for b in self.binds))
+
+    @property
+    def listening(self) -> bool:
+        """True once every bind is accepting connections."""
+        return self._ready.is_set() and self._error is None and (
+            self._thread is not None and self._thread.is_alive())
 
     def stop(self, timeout: float = 3.0) -> None:
         if self._loop is None or self._stop_event is None:

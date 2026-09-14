@@ -47,6 +47,24 @@ OPUS_MT_URLS = {
     # Low-resource: only ~4k genuine parallel sentences plus back-translation.
     # Validated on JW300 (religious text), which is at least the right domain.
     "yo": "https://object.pouta.csc.fi/OPUS-MT-models/en-yo/opus+bt-2020-05-23.zip",
+
+    # --- second language wave -------------------------------------------
+    # All Tatoeba-MT releases, chosen because every one was verified to ship
+    # source.spm/target.spm (SentencePiece) rather than BPE - checked by
+    # reading each zip's central directory over an HTTP Range request before
+    # downloading, which is the trap the en-es note above records.
+    #
+    # Each pair also has a `opusTCv20210807+bt_transformer-big_*` release at
+    # ~870 MB. They score better but convert to ~300 MB of int8 each, which
+    # would put the installer far past its 2 GB budget for a quality gain that
+    # does not survive being read off a phone in a noisy hall.
+    "ar": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-ara/opus-2021-02-23.zip",
+    "pt": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-por/opus+bt-2021-04-14.zip",
+    "zh": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-zho/opus-2021-02-23.zip",
+    "hi": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-hin/opus+bt-2021-04-10.zip",
+    "de": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-deu/opus-2021-02-22.zip",
+    "it": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-ita/opus+bt-2021-04-14.zip",
+    "ru": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-rus/opus+bt-2021-04-14.zip",
 }
 
 # Piper TTS voices. ~60 MB each; runs on the onnxruntime we already have.
@@ -59,6 +77,19 @@ PIPER_VOICES = {
     "es_ES-davefx-medium": f"{_PIPER_BASE}/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx",
     "es_ES-sharvard-medium": f"{_PIPER_BASE}/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx",
     "es_MX-ald-medium":    f"{_PIPER_BASE}/es/es_MX/ald/medium/es_MX-ald-medium.onnx",
+
+    # --- second language wave -------------------------------------------
+    # One medium voice per new target. Names taken from the published
+    # voices.json index, not guessed. Portuguese uses pt_BR rather than the
+    # pt_PT alternative, which carries a non-ASCII character in its filename
+    # and is the smaller audience.
+    "ar_JO-kareem-medium": f"{_PIPER_BASE}/ar/ar_JO/kareem/medium/ar_JO-kareem-medium.onnx",
+    "pt_BR-faber-medium":  f"{_PIPER_BASE}/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx",
+    "zh_CN-huayan-medium": f"{_PIPER_BASE}/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx",
+    "hi_IN-pratham-medium": f"{_PIPER_BASE}/hi/hi_IN/pratham/medium/hi_IN-pratham-medium.onnx",
+    "de_DE-thorsten-medium": f"{_PIPER_BASE}/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx",
+    "it_IT-paola-medium":  f"{_PIPER_BASE}/it/it_IT/paola/medium/it_IT-paola-medium.onnx",
+    "ru_RU-dmitri-medium": f"{_PIPER_BASE}/ru/ru_RU/dmitri/medium/ru_RU-dmitri-medium.onnx",
 }
 
 

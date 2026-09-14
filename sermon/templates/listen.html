@@ -127,20 +127,16 @@
 <div id="gate">
   <div class="brand">Live Translation</div>
   <div class="sub">Pick a language.<br>The translation will play automatically as the speaker talks.</div>
-  <div class="langgroup" id="gate-langs">
-    <button class="chip" data-lang="fr"><span class="flag">🇫🇷</span>Français</button>
-    <button class="chip" data-lang="es"><span class="flag">🇪🇸</span>Español</button>
-  </div>
+  <!-- Chips are built from the language list the server advertises, so a
+       language whose model failed to load is never offered. -->
+  <div class="langgroup" id="gate-langs"></div>
   <button class="go" id="gate-go">Start listening</button>
 </div>
 
 <div id="status" aria-label="connection"></div>
 <button id="mute" class="on" aria-label="mute">🔊</button>
 
-<div id="top">
-  <button class="chip" data-lang="fr"><span class="flag">🇫🇷</span>FR</button>
-  <button class="chip" data-lang="es"><span class="flag">🇪🇸</span>ES</button>
-</div>
+<div id="top"></div>
 
 <div id="stage"><canvas id="viz"></canvas></div>
 
@@ -161,14 +157,83 @@ let voiceOn = store.get("voice", "1") === "1";
 const $ = id => document.getElementById(id);
 const gate      = $("gate");
 const gateGo    = $("gate-go");
-const gateLangs = document.querySelectorAll("#gate-langs .chip");
-const topLangs  = document.querySelectorAll("#top .chip");
+const gateBox   = $("gate-langs");
+const topBox    = $("top");
+let   gateLangs = [];        // rebuilt when the server tells us its languages
+let   topLangs  = [];
 const muteBtn   = $("mute");
 const statusDot = $("status");
 const caption   = $("caption");
 const stage     = $("stage");
 const viz       = $("viz");
 const vctx      = viz.getContext("2d");
+
+// --------------------------------------------------- language list + chips
+// Populated from the welcome message. Until then we have no chips, which is
+// correct: we must not offer a language the server cannot produce.
+let LANGS = {};          // code -> {native, flag, speech, rtl, voice}
+let LANG_ORDER = [];
+
+function buildLangChips() {
+  const mk = (code, label) => {
+    const m = LANGS[code] || {};
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.dataset.lang = code;
+    const f = document.createElement("span");
+    f.className = "flag";
+    f.textContent = m.flag || "";
+    b.appendChild(f);
+    b.appendChild(document.createTextNode(label));
+    return b;
+  };
+  gateBox.innerHTML = "";
+  topBox.innerHTML = "";
+  LANG_ORDER.forEach(code => {
+    const m = LANGS[code] || {};
+    gateBox.appendChild(mk(code, m.native || code.toUpperCase()));
+    topBox.appendChild(mk(code, code.toUpperCase()));
+  });
+  gateLangs = Array.from(gateBox.querySelectorAll(".chip"));
+  topLangs = Array.from(topBox.querySelectorAll(".chip"));
+  gateLangs.forEach(b => b.addEventListener("click", () => {
+    setLang(b.dataset.lang, /*live*/ false);
+  }));
+  topLangs.forEach(b => b.addEventListener("click", () => {
+    setLang(b.dataset.lang, /*live*/ true);
+  }));
+  // A language remembered from a previous service may no longer be offered.
+  if (lang && !LANGS[lang]) { lang = ""; store.set("lang", ""); }
+  paintLangs();
+}
+
+function setLang(next, live) {
+  const old = lang;
+  lang = next;
+  store.set("lang", lang);
+  paintLangs();
+  applyDirection();
+  reportLang();
+  if (live && old !== lang) {
+    if (currentMessage) applyMessage(currentMessage, /*speak*/ false);
+    stopPlayback();
+  }
+}
+
+// Arabic reads right-to-left; without this the caption renders with its
+// punctuation and any embedded latin words in the wrong places.
+function applyDirection() {
+  const rtl = !!(LANGS[lang] && LANGS[lang].rtl);
+  caption.dir = rtl ? "rtl" : "ltr";
+  caption.style.textAlign = rtl ? "right" : "";
+}
+
+// Tell the server which language we are on, so it only synthesises audio
+// somebody is actually listening to.
+function reportLang() {
+  if (!lang || !ws || ws.readyState !== 1) return;
+  try { ws.send(JSON.stringify({ type: "lang", lang: lang })); } catch {}
+}
 
 // ------------------------------------------------------ language painting
 function paintLangs() {
@@ -182,19 +247,6 @@ function paintMute() {
 }
 paintLangs(); paintMute();
 
-gateLangs.forEach(b => b.addEventListener("click", () => {
-  lang = b.dataset.lang; store.set("lang", lang); paintLangs();
-}));
-topLangs.forEach(b => b.addEventListener("click", () => {
-  const old = lang;
-  lang = b.dataset.lang; store.set("lang", lang); paintLangs();
-  if (old !== lang) {
-    // Show the current translation in the new language if we have one
-    if (currentMessage) applyMessage(currentMessage, /*speak*/ false);
-    // Stop any in-flight speech of the old language
-    stopPlayback();
-  }
-}));
 muteBtn.addEventListener("click", () => {
   voiceOn = !voiceOn; store.set("voice", voiceOn ? "1" : "0"); paintMute();
   if (!voiceOn) stopPlayback();
@@ -354,6 +406,9 @@ function applyMessage(msg, speak) {
   clearTimeout(audioWaitTimer);
   awaitingAudioFor = null;
   if (!speak) return;
+  // English is what the room is already hearing out loud. Speaking it back
+  // through the phone would echo the preacher a few seconds late.
+  if (LANGS[lang] && LANGS[lang].source) return;
 
   if (audioUrl) {
     playServerAudio(audioUrl);
@@ -423,7 +478,10 @@ function playTTS(text) {
   try {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = lang === "es" ? "es-ES" : "fr-FR";
+    // BCP-47 tag for the phone's own voice. Was hardcoded to fr/es; with nine
+    // targets a wrong tag makes the phone read e.g. Russian with a French
+    // voice, which is unintelligible.
+    u.lang = (LANGS[lang] && LANGS[lang].speech) || lang;
     u.rate = 1;
     breathing = true;     // no analyser hook for Web Speech
     speechSynthesis.speak(u);
@@ -437,6 +495,14 @@ function setDot(live) { statusDot.classList.toggle("live", !!live); }
 
 function receive(msg) {
   if (msg.type === "welcome") {
+    // The server is authoritative about which languages exist.
+    if (msg.languages && Array.isArray(msg.targets)) {
+      LANGS = msg.languages;
+      LANG_ORDER = msg.targets.filter(c => LANGS[c]);
+      buildLangChips();
+      applyDirection();
+      reportLang();
+    }
     // Take only the most recent, if any - no history feed
     if (Array.isArray(msg.history) && msg.history.length) {
       const last = msg.history[msg.history.length - 1];
@@ -454,7 +520,9 @@ function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const url = proto + "//" + location.host + "/ws";
   try { ws = new WebSocket(url); } catch { scheduleReconnect(); return; }
-  ws.addEventListener("open", () => { setDot(true); reconnectDelay = 500; });
+  // Re-announce our language on every (re)connect: after a reconnect the
+  // server has no record of it, and would stop synthesising our audio.
+  ws.addEventListener("open", () => { setDot(true); reconnectDelay = 500; reportLang(); });
   ws.addEventListener("close", () => { setDot(false); scheduleReconnect(); });
   ws.addEventListener("error", () => { try { ws.close(); } catch {} });
   ws.addEventListener("message", ev => {

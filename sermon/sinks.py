@@ -14,7 +14,7 @@ import time
 from abc import ABC, abstractmethod
 from datetime import datetime
 
-from .config import TTSConfig
+from .config import SOURCE_LANG, TTSConfig
 from .console import enable_utf8_console  # re-exported for convenience
 from .pipeline import PipelineResult
 from .tts import Speaker
@@ -37,6 +37,20 @@ class ConsoleSink(Sink):
         self.counter = 0
 
     def emit(self, result: PipelineResult) -> None:
+        # Printing must never be able to kill the pipeline. With Arabic, Hindi
+        # and Chinese in the target set this stopped being hypothetical: a
+        # console stuck on a legacy code page raises UnicodeEncodeError, and in
+        # the windowed build stdout may not be a stream at all.
+        try:
+            self._emit(result)
+        except Exception:
+            self.counter += 0
+            try:
+                sys.stderr.write("  !! console output failed for this line\n")
+            except Exception:
+                pass
+
+    def _emit(self, result: PipelineResult) -> None:
         self.counter += 1
         stamp = datetime.now().strftime("%H:%M:%S")
         print()
@@ -178,8 +192,15 @@ class BroadcastSink(Sink):
     def emit(self, result: PipelineResult) -> None:
         self.counter += 1
         counter = self.counter
+        # Synthesis is by far the most expensive stage - roughly 1s per
+        # language against 0.5s for translation - and it is the only one that
+        # scales badly with the target count. Text goes to everyone because it
+        # is cheap and a listener switching language should see it instantly;
+        # audio is produced ONLY for languages someone is actually listening
+        # to. Ten languages offered costs the same as three in use.
+        wanted = self.broadcaster.active_languages()
         pending = [lang for lang in self.speakers
-                   if result.translations.get(lang)]
+                   if result.translations.get(lang) and lang in wanted]
         message = {
             "type": "translation",
             "id": counter,
@@ -189,6 +210,10 @@ class BroadcastSink(Sink):
             "latency": round(result.total_latency, 2),
         }
         message.update(result.translations)
+        # English is the source language: there is no translator behind it,
+        # but listeners can still select it, so expose it under its own code
+        # the same way every target is exposed.
+        message[SOURCE_LANG] = result.english
         # Tell the phone which languages have audio coming, so it shows the
         # text now and waits for the clip instead of racing ahead with the
         # browser's own robotic voice.

@@ -138,12 +138,38 @@ class STTConfig:
     cpu_threads: int = field(default_factory=auto_threads)
 
 
+# English is the SOURCE language, so it is a listener option with no
+# translator behind it - the pipeline already has the text. It is listed here
+# only so the listener UI can offer it; `targets` never contains it.
+SOURCE_LANG = "en"
+
+# Everything the UI can offer. `native` is what a speaker of the language
+# calls it - a listener scanning the list should find their own language
+# without reading English. `rtl` drives text direction on the listener page.
+# `speech` is the BCP-47 tag handed to the phone's own voice when we have no
+# server-synth clip for that language.
+LANGUAGES = {
+    "en": {"native": "English",  "flag": "\U0001F1EC\U0001F1E7", "speech": "en-GB"},
+    "fr": {"native": "Français", "flag": "\U0001F1EB\U0001F1F7", "speech": "fr-FR"},
+    "es": {"native": "Español",  "flag": "\U0001F1EA\U0001F1F8", "speech": "es-ES"},
+    "pt": {"native": "Português", "flag": "\U0001F1E7\U0001F1F7", "speech": "pt-BR"},
+    "de": {"native": "Deutsch",  "flag": "\U0001F1E9\U0001F1EA", "speech": "de-DE"},
+    "it": {"native": "Italiano", "flag": "\U0001F1EE\U0001F1F9", "speech": "it-IT"},
+    "ru": {"native": "Русский",  "flag": "\U0001F1F7\U0001F1FA", "speech": "ru-RU"},
+    "ar": {"native": "العربية",   "flag": "\U0001F1F8\U0001F1E6", "speech": "ar-SA", "rtl": True},
+    "hi": {"native": "हिन्दी",      "flag": "\U0001F1EE\U0001F1F3", "speech": "hi-IN"},
+    "zh": {"native": "中文",      "flag": "\U0001F1E8\U0001F1F3", "speech": "zh-CN"},
+}
+
+DEFAULT_TARGETS = ["fr", "es", "pt", "de", "it", "ru", "ar", "hi", "zh"]
+
+
 @dataclass
 class MTConfig:
-    # Every target listed here is translated in parallel from the same English.
+    # Every target listed here is translated from the same English.
     # Order matters: the first target is the "primary" - the one TTS speaks
     # aloud and the one the console prints first.
-    targets: list[str] = field(default_factory=lambda: ["fr", "es"])
+    targets: list[str] = field(default_factory=lambda: _targets_from_env())
     beam_size: int = 2
     cpu_threads: int = field(default_factory=mt_threads)
     max_decoding_length: int = 320
@@ -154,9 +180,32 @@ class MTConfig:
         return self.targets[0] if self.targets else "fr"
 
 
+def _targets_from_env() -> list[str]:
+    """Translation targets, optionally narrowed by SERMON_TARGETS.
+
+    SERMON_TARGETS=fr,es  -> just those two, whatever else is installed.
+    Useful for cutting per-utterance work on a weak machine, and for testing.
+    """
+    raw = (os.environ.get("SERMON_TARGETS") or "").strip()
+    if not raw:
+        return list(DEFAULT_TARGETS)
+    picked = [c.strip().lower() for c in raw.split(",") if c.strip()]
+    picked = [c for c in picked if c in LANGUAGES and c != SOURCE_LANG]
+    return picked or list(DEFAULT_TARGETS)
+
+
 ALL_VOICES = {
     "fr": "fr_FR-siwis-medium",
     "es": "es_ES-davefx-medium",
+    "pt": "pt_BR-faber-medium",
+    "de": "de_DE-thorsten-medium",
+    "it": "it_IT-paola-medium",
+    "ru": "ru_RU-dmitri-medium",
+    "ar": "ar_JO-kareem-medium",
+    "hi": "hi_IN-pratham-medium",
+    "zh": "zh_CN-huayan-medium",
+    # No English voice on purpose: the room can already hear the speaker.
+    # English listeners get the live transcript as text.
 }
 
 

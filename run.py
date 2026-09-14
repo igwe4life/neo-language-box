@@ -310,11 +310,27 @@ def cmd_live(args) -> int:
         t0 = time.perf_counter()
         print(f"  Loading translation model en-{t}...", end="", flush=True)
         tr_cfg = replace(cfg.mt, targets=[t])
-        tr = MarianCT2Translator(cfg.mt_dir_for(t), tr_cfg)
+        try:
+            tr = MarianCT2Translator(cfg.mt_dir_for(t), tr_cfg)
+        except Exception as exc:
+            # One bad target must not take the service down. With nine models
+            # loaded at once a small-RAM machine hits `mkl_malloc: failed to
+            # allocate memory` partway through, and a corrupt download raises
+            # here too. Drop that language and carry on with the rest.
+            print(f" FAILED ({type(exc).__name__}: {str(exc)[:60]})")
+            print(f"     en-{t} unavailable; continuing without it.")
+            continue
         rules = load_phrase_overrides(phrase_file_for(t))
         translators[t] = OverrideTranslator(tr, rules) if rules else tr
         extra = f" [+ {len(rules)} phrase overrides]" if rules else ""
         print(f" {time.perf_counter() - t0:.1f}s{extra}")
+
+    if not translators:
+        print("  !! no translation models could be loaded.")
+        return 2
+    # Targets narrows to what actually loaded, so the listener UI only ever
+    # offers languages the server can really produce.
+    targets = [t for t in targets if t in translators]
 
     source_kind = getattr(args, "source", "mic")
     use_network_mic = source_kind == "browser"
@@ -361,7 +377,12 @@ def cmd_live(args) -> int:
         # self-signed cert warning (loopback = secure context regardless).
         binds = [Bind(cfg.server.host, cfg.server.port, ssl_ctx)]
         if getattr(args, "tauri", False):
-            binds.append(Bind("127.0.0.1", cfg.server.loopback_port, None))
+            # Follow --port. The loopback bind used to be pinned to 8000 no
+            # matter what, so moving the server off a busy port still left the
+            # desktop window pointing at whatever else owned 8000.
+            loopback = (cfg.server.port if getattr(args, "port", None)
+                        else cfg.server.loopback_port)
+            binds.append(Bind("127.0.0.1", loopback, None))
 
         # Every source the server may need to talk to (pause/resume, receive
         # network mic frames, read live level) gets handed in. Previously we
@@ -374,57 +395,80 @@ def cmd_live(args) -> int:
             server_handle.start()
         except OSError as exc:
             print(f"  !! could not start server on port {cfg.server.port}: {exc}")
-            print(f"     try:  python run.py --serve --port 8080")
+            print( "     Something else is probably already using that port.")
+            print(f"     See what:  netstat -ano | findstr :{cfg.server.port}")
+            print( "     Then either stop it, or run on another port:")
+            print( "       python run.py --serve --port 8080")
             return 2
         # Server-side audio: one Piper voice per translation target, so any
         # listener language ends up as an audio clip they can fetch by HTTP.
         # A muted phone or a phone on a language we can't voice pays zero.
         audio_speakers: dict[str, "PiperSpeaker"] = {}
         if not args.no_audio:
-            import concurrent.futures
             from sermon.tts import PiperSpeaker
 
-            def _load_voice(mp, cfg_tts):
-                return PiperSpeaker(mp, cfg_tts)
-
-            for t in targets:
-                if t not in cfg.tts.voices:
-                    continue
-                model_path = cfg.tts_model_for(cfg.tts.voices[t])
+            # Voices load CONCURRENTLY. Sequentially this is ~6s each, which
+            # was tolerable for two languages and is a minute of staring at a
+            # loading screen for nine. Each still gets its own daemon thread
+            # and a hard timeout, because Piper can deadlock in espeak-ng init
+            # on some Windows configurations; a stuck voice is skipped (text
+            # still translates) rather than hanging startup.
+            import threading
+            wanted = [(t, cfg.tts_model_for(cfg.tts.voices[t]))
+                      for t in targets if t in cfg.tts.voices]
+            results: dict[str, dict] = {}
+            threads = []
+            for t, model_path in wanted:
                 if not model_path.exists():
                     print(f"  !! Piper voice for {t} missing ({model_path.name}) - "
                           f"server audio for {t} disabled.")
                     continue
-                t0 = time.perf_counter()
-                print(f"  Loading server voice for {t} ({cfg.tts.voices[t]})...",
-                      end="", flush=True)
-                # Voice loads run in a daemon thread with a hard timeout.
-                # Some machine states cause Piper's second ONNX session to
-                # deadlock during espeak-ng init; treating that as a skip
-                # keeps the pipeline usable (text still translates; the
-                # affected language just doesn't get server-generated audio).
-                # NOTE: not a ThreadPoolExecutor context manager - its __exit__
-                # blocks on the stuck worker forever.
-                import threading
-                result = {}
-                def _worker():
+                slot: dict = {}
+                results[t] = slot
+
+                def _worker(mp=model_path, slot=slot):
                     try:
-                        result["speaker"] = _load_voice(model_path, cfg.tts)
+                        slot["speaker"] = PiperSpeaker(mp, cfg.tts)
                     except Exception as exc:
-                        result["error"] = exc
-                th = threading.Thread(target=_worker, daemon=True, name=f"piper-load-{t}")
+                        slot["error"] = exc
+
+                th = threading.Thread(target=_worker, daemon=True,
+                                      name=f"piper-load-{t}")
                 th.start()
-                th.join(timeout=30)
-                if "speaker" in result:
-                    audio_speakers[t] = result["speaker"]
-                    print(f" {time.perf_counter() - t0:.1f}s")
-                elif "error" in result:
-                    print(f" failed ({result['error']})")
-                else:
-                    print(f" TIMED OUT after 30s; skipping {t} audio (text still works).")
-                    # Thread is orphaned. Its C-level ONNX init is stuck; Python
-                    # can't join it. When the process exits, the daemon thread
-                    # dies with it. Meanwhile the pipeline keeps running.
+                threads.append((t, th))
+
+            if threads:
+                t0 = time.perf_counter()
+                print(f"  Loading {len(threads)} server voices in parallel...",
+                      end="", flush=True)
+                deadline = time.monotonic() + 60
+                for _, th in threads:
+                    th.join(timeout=max(0.1, deadline - time.monotonic()))
+                print(f" {time.perf_counter() - t0:.1f}s")
+                for t, th in threads:
+                    slot = results[t]
+                    if "speaker" in slot:
+                        audio_speakers[t] = slot["speaker"]
+                    elif "error" in slot:
+                        print(f"     {t}: failed ({slot['error']})")
+                    else:
+                        # Orphaned daemon thread stuck in C-level ONNX init.
+                        # It dies with the process; the pipeline runs on.
+                        print(f"     {t}: timed out; text still works.")
+
+        # Tell listeners what they can actually pick. English first: it is the
+        # source language, needs no model, and is what the room is hearing.
+        # Only targets whose MT model really loaded are offered, so a missing
+        # model shows up as an absent chip rather than a blank screen.
+        from sermon.config import LANGUAGES, SOURCE_LANG
+        offered = [SOURCE_LANG] + [t for t in targets if t in LANGUAGES]
+        broadcaster.languages = offered
+        broadcaster.language_meta = {
+            code: {**LANGUAGES[code],
+                   "voice": code in audio_speakers,
+                   "source": code == SOURCE_LANG}
+            for code in offered if code in LANGUAGES
+        }
 
         broadcast_sink = BroadcastSink(broadcaster, speakers=audio_speakers)
         sinks.append(broadcast_sink)
