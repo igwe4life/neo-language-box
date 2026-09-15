@@ -74,6 +74,21 @@ def _resolve_models_dir() -> Path:
     return Path.cwd() / "models"
 
 
+def _missing_models(models: Path) -> list:
+    """What the app needs but cannot find.
+
+    Models ship separately from the installer, so "not copied yet" is a normal
+    first-run state rather than a corrupt install. Saying exactly which pieces
+    are absent beats a stack trace ninety seconds into a loading screen.
+    """
+    needed = [
+        ("speech recognition", models / "parakeet-0.6b" / "encoder.int8.onnx"),
+        ("translation (French)", models / "mt" / "opus-mt-en-fr" / "model.bin"),
+        ("voices", models / "tts"),
+    ]
+    return [label for label, path in needed if not path.exists()]
+
+
 DEFAULT_STT = "parakeet-0.6b"
 # Only engines whose weights are actually in the installer. whisper-small.en
 # is deliberately absent: it needed 9.3s to transcribe a 4.7s clip on this
@@ -156,7 +171,19 @@ def _wait_for_server(timeout: float = 60.0) -> bool:
 
 def main() -> int:
     global LOOPBACK_PORT
-    os.environ.setdefault("SERMON_MODELS_DIR", str(_resolve_models_dir()))
+    models = _resolve_models_dir()
+    os.environ.setdefault("SERMON_MODELS_DIR", str(models))
+
+    missing = _missing_models(models)
+    if missing:
+        import webview
+        webview.create_window(
+            APP_TITLE, html=_models_missing_page(models, missing),
+            width=WINDOW_WIDTH, height=WINDOW_HEIGHT,
+            resizable=True, confirm_close=False, text_select=True)
+        webview.start()
+        return 1
+
     LOOPBACK_PORT = _pick_port()
     if LOOPBACK_PORT != PREFERRED_PORT:
         print(f"[desktop] port {PREFERRED_PORT} is in use; serving on {LOOPBACK_PORT}")
@@ -217,6 +244,38 @@ def _loading_page() -> str:
      the first time.</p>
 </div>
 """.replace("%%", "%")
+
+
+def _models_missing_page(models: Path, missing: list) -> str:
+    items = "".join(f"<li>{m}</li>" for m in missing)
+    return f"""<!doctype html>
+<meta charset="utf-8">
+<style>
+  body {{ margin:0; background:#0b0b0b; color:#e0e0e0;
+          font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+          display:flex; align-items:center; justify-content:center;
+          height:100vh; }}
+  .box {{ max-width:620px; padding:34px; }}
+  h1 {{ color:#e8b53a; font-size:21px; margin:0 0 14px; }}
+  p  {{ color:#b0b0b0; line-height:1.6; font-size:14px; }}
+  code {{ background:#171717; border:1px solid #262626; border-radius:6px;
+          padding:3px 7px; font-size:13px; color:#f2f2f2;
+          word-break:break-all; }}
+  ul {{ color:#b0b0b0; font-size:14px; line-height:1.7; }}
+  .path {{ margin:18px 0; }}
+</style>
+<div class="box">
+  <h1>The language models have not been copied yet</h1>
+  <p>The app installs without them - they are about 5.8&nbsp;GB and are copied
+     separately, once per machine.</p>
+  <p>Missing:</p>
+  <ul>{items}</ul>
+  <p class="path">Copy the <code>models</code> folder here:</p>
+  <p><code>{models}</code></p>
+  <p>Then start the app again. Nothing needs downloading and no internet is
+     required once the folder is in place.</p>
+</div>
+"""
 
 
 def _error_page(msg: str) -> str:

@@ -55,14 +55,20 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 [Files]
 ; The PyInstaller-produced folder, verbatim.
 Source: "dist\SermonTranslationSpeaker\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Models sit BESIDE the executable (see desktop_app.py _resolve_models_dir).
-; Included from the project's models/ folder so an install is fully self-
-; contained - no internet needed after install.
-Source: "models\*"; DestDir: "{app}\models"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Models are NOT bundled. With fourteen languages they come to ~5.8 GB, which
+; makes the installer unusable to move around - and they change far less often
+; than the code, so re-shipping them with every build wastes hours of copying.
+; They are copied to {app}\models once per machine instead; desktop_app.py
+; checks for them at startup and says exactly what is missing.
 ; Application vocab files (already inside the bundle's _internal/, but
 ; also placed at the app root so `SERMON_VOCAB_FILE` overrides work).
 Source: "vocabulary.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "phrases.yo.txt";  DestDir: "{app}"; Flags: ignoreversion
+
+[Dirs]
+; Created empty so the destination for the model folder is obvious, and so
+; the uninstaller knows about it.
+Name: "{app}\models"
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
