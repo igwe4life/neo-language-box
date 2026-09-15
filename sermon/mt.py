@@ -90,6 +90,116 @@ class MarianCT2Translator(Translator):
         return TranslationResult(out, time.perf_counter() - started)
 
 
+class NllbTranslator(Translator):
+    """One NLLB-200 model serving several target languages.
+
+    Used for Igbo, Yoruba, Hausa and Swahili. OPUS-MT does have bilingual
+    models for these, but they are low-resource pairs and a native speaker
+    judged them worse than NLLB in a blind comparison; the European and Asian
+    targets stay on OPUS-MT, which is both better there and ~13x faster.
+
+    Unlike Marian, the target language is not baked into the model - it is a
+    token. The source is the sentence followed by </s> and the SOURCE language
+    tag, and the target is prefixed with the TARGET tag. A wrong arrangement
+    here does not raise: it produces fluent-looking output in no particular
+    language, so `SHARED` instances are validated at startup.
+
+    Because one model serves every target, all of them can be decoded in a
+    SINGLE batched call - measured at 2.3-2.8x faster than looping, which is
+    what makes carrying a 1.3B model affordable.
+    """
+
+    SRC = "eng_Latn"
+
+    def __init__(self, model_dir: str | Path, cfg: MTConfig, target_code: str):
+        import ctranslate2
+        import sentencepiece as spm
+
+        self.cfg = cfg
+        self.target_code = target_code       # e.g. "ibo_Latn"
+        self.model_dir = Path(model_dir)
+        spm_path = self.model_dir / "sentencepiece.bpe.model"
+        if not spm_path.exists():
+            raise FileNotFoundError(
+                f"Missing {spm_path}. Run: python scripts/fetch_models.py"
+            )
+        self.sp = spm.SentencePieceProcessor(model_file=str(spm_path))
+        self.translator = ctranslate2.Translator(
+            str(self.model_dir),
+            device="cpu",
+            compute_type="int8",
+            inter_threads=1,
+            intra_threads=cfg.cpu_threads,
+        )
+
+    # -- shared-instance plumbing ---------------------------------------
+    # Loading a 1.3B model once per language would cost gigabytes, so callers
+    # build ONE and clone a cheap view per target.
+
+    def for_target(self, target_code: str) -> "NllbTranslator":
+        clone = object.__new__(NllbTranslator)
+        clone.cfg = self.cfg
+        clone.model_dir = self.model_dir
+        clone.sp = self.sp
+        clone.translator = self.translator
+        clone.target_code = target_code
+        # Lets the pipeline recognise that several targets ride on one model
+        # and decode them together instead of one call each.
+        clone.batch_base = self
+        return clone
+
+    batch_base = None
+
+    def _encode(self, text: str) -> list:
+        return self.sp.encode(text, out_type=str) + ["</s>", self.SRC]
+
+    def _decode(self, tokens: list) -> str:
+        if tokens and tokens[0].endswith("_Latn") or (
+                tokens and tokens[0] == self.target_code):
+            tokens = tokens[1:]
+        return self.sp.decode(tokens)
+
+    def translate(self, text: str) -> TranslationResult:
+        started = time.perf_counter()
+        text = text.strip()
+        if not text:
+            return TranslationResult("", 0.0)
+        sentences = [s for s in _SENTENCE_SPLIT.split(text) if s.strip()]
+        batch = [self._encode(s) for s in sentences]
+        results = self.translator.translate_batch(
+            batch,
+            target_prefix=[[self.target_code]] * len(batch),
+            beam_size=self.cfg.beam_size,
+            max_decoding_length=self.cfg.max_decoding_length,
+        )
+        out = " ".join(self._decode(r.hypotheses[0]) for r in results).strip()
+        return TranslationResult(out, time.perf_counter() - started)
+
+    def translate_many(self, text: str, targets: list) -> dict:
+        """Every target in one batched pass. Returns {target_code: text}."""
+        text = text.strip()
+        if not text or not targets:
+            return {}
+        sentences = [s for s in _SENTENCE_SPLIT.split(text) if s.strip()]
+        batch, prefixes, owner = [], [], []
+        for code in targets:
+            for s in sentences:
+                batch.append(self._encode(s))
+                prefixes.append([code])
+                owner.append(code)
+        results = self.translator.translate_batch(
+            batch,
+            target_prefix=prefixes,
+            beam_size=self.cfg.beam_size,
+            max_decoding_length=self.cfg.max_decoding_length,
+            max_batch_size=len(batch),
+        )
+        parts: dict = {}
+        for code, r in zip(owner, results):
+            parts.setdefault(code, []).append(self._decode(r.hypotheses[0]))
+        return {c: " ".join(v).strip() for c, v in parts.items()}
+
+
 # -------------------------------------------------------------- phrase overrides
 
 _TRAILING_PUNCT = re.compile(r"([\.!?,;:]+)\s*$")

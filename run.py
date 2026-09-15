@@ -91,8 +91,21 @@ def available_targets(cfg: AppConfig) -> list[str]:
     """Configured targets whose model is FULLY on disk (both weights AND the
     sentencepiece tokeniser). A partial directory - e.g. from an interrupted
     download - is treated as missing so we don't crash later in Translator init."""
+    from sermon.config import NLLB_TARGETS
+
     kept = []
+    nllb_dir = cfg.models_dir / "nllb-1.3b"
+    nllb_ok = ((nllb_dir / "model.bin").exists()
+               and (nllb_dir / "sentencepiece.bpe.model").exists())
     for t in cfg.mt.targets:
+        # The African targets are served by the shared NLLB model, not by a
+        # bilingual directory of their own.
+        if t in NLLB_TARGETS:
+            if nllb_ok:
+                kept.append(t)
+            else:
+                print(f"  !! skipping '{t}': NLLB-200 not downloaded at {nllb_dir}")
+            continue
         d = cfg.mt_dir_for(t)
         if (d / "model.bin").exists() and (d / "source.spm").exists():
             kept.append(t)
@@ -287,8 +300,10 @@ def cmd_live(args) -> int:
     else:
         print(f"  STT   faster-whisper {cfg.stt.model} ({cfg.stt.compute_type}, "
               f"{cfg.stt.cpu_threads} threads)")
+    from sermon.config import NLLB_TARGETS as _nllb
     for t in targets:
-        print(f"  MT    OPUS-MT en-{t} (CTranslate2 int8)")
+        engine = "NLLB-200 1.3B" if t in _nllb else "OPUS-MT"
+        print(f"  MT    {engine} en-{t} (CTranslate2 int8)")
     if cfg.tts.enabled:
         print(f"  TTS   Piper {cfg.tts.voice}  (speaks {cfg.mt.target})")
     print("  Net   offline - no API keys, nothing leaves this machine")
@@ -305,9 +320,41 @@ def cmd_live(args) -> int:
     from sermon.config import phrase_file_for
     from sermon.mt import OverrideTranslator, load_phrase_overrides
 
+    from sermon.config import NLLB_TARGETS
+
+    # One NLLB model serves every African target; loading a 1.3B model per
+    # language would cost gigabytes, so build it once and take a cheap view
+    # per target.
+    nllb_base = None
+    nllb_wanted = [t for t in targets if t in NLLB_TARGETS]
+    if nllb_wanted:
+        from sermon.mt import NllbTranslator
+        nllb_dir = cfg.models_dir / "nllb-1.3b"
+        t0 = time.perf_counter()
+        print(f"  Loading NLLB-200 for {', '.join(nllb_wanted)}...",
+              end="", flush=True)
+        try:
+            nllb_base = NllbTranslator(nllb_dir, cfg.mt,
+                                       NLLB_TARGETS[nllb_wanted[0]])
+            print(f" {time.perf_counter() - t0:.1f}s")
+        except Exception as exc:
+            print(f" FAILED ({type(exc).__name__}: {str(exc)[:60]})")
+            print("     those languages will be unavailable.")
+
     translators: dict[str, "MarianCT2Translator"] = {}
     for t in targets:
         t0 = time.perf_counter()
+        if t in NLLB_TARGETS:
+            if nllb_base is None:
+                continue
+            tr = nllb_base.for_target(NLLB_TARGETS[t])
+            rules = load_phrase_overrides(phrase_file_for(t))
+            # Wrapping costs this target its place in the batched decode (the
+            # rules run before translation), so only do it when rules exist.
+            translators[t] = OverrideTranslator(tr, rules) if rules else tr
+            extra = f" [+ {len(rules)} phrase overrides, unbatched]" if rules else ""
+            print(f"  Translation en-{t} via NLLB-200{extra}")
+            continue
         print(f"  Loading translation model en-{t}...", end="", flush=True)
         tr_cfg = replace(cfg.mt, targets=[t])
         try:
@@ -414,21 +461,29 @@ def cmd_live(args) -> int:
             # on some Windows configurations; a stuck voice is skipped (text
             # still translates) rather than hanging startup.
             import threading
+            from sermon.config import VITS_VOICES
+            from sermon.tts import VitsSpeaker
+
+            # Piper covers most targets; Igbo, Yoruba and Hausa have no Piper
+            # voice and use raw VITS ONNX through the same onnxruntime.
             wanted = [(t, cfg.tts_model_for(cfg.tts.voices[t]))
                       for t in targets if t in cfg.tts.voices]
+            wanted += [(t, cfg.models_dir / "tts" / VITS_VOICES[t])
+                       for t in targets if t in VITS_VOICES]
             results: dict[str, dict] = {}
             threads = []
             for t, model_path in wanted:
                 if not model_path.exists():
-                    print(f"  !! Piper voice for {t} missing ({model_path.name}) - "
+                    print(f"  !! voice for {t} missing ({model_path.name}) - "
                           f"server audio for {t} disabled.")
                     continue
                 slot: dict = {}
                 results[t] = slot
+                make = VitsSpeaker if t in VITS_VOICES else PiperSpeaker
 
-                def _worker(mp=model_path, slot=slot):
+                def _worker(mp=model_path, slot=slot, make=make):
                     try:
-                        slot["speaker"] = PiperSpeaker(mp, cfg.tts)
+                        slot["speaker"] = make(mp, cfg.tts)
                     except Exception as exc:
                         slot["error"] = exc
 

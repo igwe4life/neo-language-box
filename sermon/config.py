@@ -159,9 +159,30 @@ LANGUAGES = {
     "ar": {"native": "العربية",   "flag": "\U0001F1F8\U0001F1E6", "speech": "ar-SA", "rtl": True},
     "hi": {"native": "हिन्दी",      "flag": "\U0001F1EE\U0001F1F3", "speech": "hi-IN"},
     "zh": {"native": "中文",      "flag": "\U0001F1E8\U0001F1F3", "speech": "zh-CN"},
+    "sw": {"native": "Kiswahili", "flag": "\U0001F1F0\U0001F1EA", "speech": "sw-KE"},
+    "ig": {"native": "Igbo",     "flag": "\U0001F1F3\U0001F1EC", "speech": "ig-NG"},
+    "yo": {"native": "Yorùbá",   "flag": "\U0001F1F3\U0001F1EC", "speech": "yo-NG"},
+    "ha": {"native": "Hausa",    "flag": "\U0001F1F3\U0001F1EC", "speech": "ha-NG"},
 }
 
-DEFAULT_TARGETS = ["fr", "es", "pt", "de", "it", "ru", "ar", "hi", "zh"]
+DEFAULT_TARGETS = ["fr", "es", "pt", "de", "it", "ru", "ar", "hi", "zh",
+                   "sw", "ig", "yo", "ha"]
+
+# Targets served by NLLB-200 rather than a bilingual OPUS-MT model, mapped to
+# NLLB's own language tags. OPUS-MT does publish models for all four, but they
+# are low-resource pairs and a native speaker judged them clearly worse than
+# NLLB in a blind comparison. Everything NOT listed here stays on OPUS-MT,
+# which is better for those languages and about 13x faster.
+NLLB_TARGETS = {
+    "ig": "ibo_Latn",
+    "yo": "yor_Latn",
+    "ha": "hau_Latn",
+    "sw": "swh_Latn",
+}
+
+# Voices that are plain VITS ONNX rather than Piper bundles, keyed by the
+# directory under models/tts/. Piper has no voice for these three languages.
+VITS_VOICES = {"ig": "ig", "yo": "yo", "ha": "ha"}
 
 
 @dataclass
@@ -204,8 +225,12 @@ ALL_VOICES = {
     "ar": "ar_JO-kareem-medium",
     "hi": "hi_IN-pratham-medium",
     "zh": "zh_CN-huayan-medium",
+    "sw": "sw_CD-lanfrica-medium",
     # No English voice on purpose: the room can already hear the speaker.
     # English listeners get the live transcript as text.
+    #
+    # Igbo, Yoruba and Hausa are absent here deliberately: Piper publishes no
+    # voice for any of them, so they are served by VITS_VOICES instead.
 }
 
 

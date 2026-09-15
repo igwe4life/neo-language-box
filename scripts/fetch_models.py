@@ -65,6 +65,18 @@ OPUS_MT_URLS = {
     "de": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-deu/opus-2021-02-22.zip",
     "it": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-ita/opus+bt-2021-04-14.zip",
     "ru": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-rus/opus+bt-2021-04-14.zip",
+
+    # --- African languages ----------------------------------------------
+    # All SentencePiece (verified the same way). Treat the quality of these
+    # with caution: they are low-resource pairs trained largely on JW300,
+    # which is religious text - a good domain match for sermons, but built
+    # from far less parallel data than the European pairs above. NLLB-200 is
+    # the alternative worth comparing against before trusting them.
+    "yo": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-yor/opus+bt-2021-04-10.zip",
+    "ig": "https://object.pouta.csc.fi/OPUS-MT-models/en-ig/opus+bt-2020-05-23.zip",
+    "ha": "https://object.pouta.csc.fi/OPUS-MT-models/en-ha/opus+bt-2020-05-23.zip",
+    "zu": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-zul/opus+bt-2021-03-12.zip",
+    "sw": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-swa/opus+bt-2021-04-10.zip",
 }
 
 # Piper TTS voices. ~60 MB each; runs on the onnxruntime we already have.
@@ -90,6 +102,31 @@ PIPER_VOICES = {
     "de_DE-thorsten-medium": f"{_PIPER_BASE}/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx",
     "it_IT-paola-medium":  f"{_PIPER_BASE}/it/it_IT/paola/medium/it_IT-paola-medium.onnx",
     "ru_RU-dmitri-medium": f"{_PIPER_BASE}/ru/ru_RU/dmitri/medium/ru_RU-dmitri-medium.onnx",
+    # Swahili is the only one of the African targets Piper covers. Igbo,
+    # Yoruba and Hausa use VITS voices instead - see MMS_VOICES below.
+    "sw_CD-lanfrica-medium": f"{_PIPER_BASE}/sw/sw_CD/lanfrica/medium/sw_CD-lanfrica-medium.onnx",
+}
+
+# Non-Piper VITS voices, for languages Piper has none. Same onnxruntime, a
+# different input signature - see sermon/tts.py VitsSpeaker.
+#
+#   Igbo    Meta's MMS-TTS has no Igbo at all, and every community MMS-style
+#           Igbo model shares a 43-character vocabulary missing i-dot-below
+#           and u-dot-below, so they cannot spell most Igbo words. This is a
+#           Coqui checkpoint trained on Igbo Bible readings with the full
+#           orthography; it needs the one-off conversion in
+#           scripts/export_vits_onnx.py before it can be used.
+#   Yoruba,
+#   Hausa   Meta's own MMS models, already published as ONNX.
+MMS_VOICES = {
+    "yor": ("willwade/mms-tts-multilingual-models-onnx",
+            ["yor/model.onnx", "yor/tokens.txt"]),
+    "hau": ("willwade/mms-tts-multilingual-models-onnx",
+            ["hau/model.onnx", "hau/tokens.txt"]),
+}
+COQUI_VOICES = {
+    "ibo": ("multilingual-tts/VITS-OpenBible-Igbo",
+            ["config.json", "model_last.pth"]),
 }
 
 
