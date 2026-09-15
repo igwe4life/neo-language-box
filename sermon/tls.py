@@ -45,8 +45,8 @@ def _generate(hosts: list[str]) -> None:
             san.append(x509.DNSName(h))
 
     subject = issuer = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, "sermon-translation.local"),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Sermon Translation"),
+        x509.NameAttribute(NameOID.COMMON_NAME, "neo-sermon.local"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Neo Sermon"),
     ])
     now = datetime.datetime.now(datetime.UTC)
     cert = (

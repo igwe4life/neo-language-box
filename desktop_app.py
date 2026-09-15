@@ -21,7 +21,7 @@ import urllib.request
 from pathlib import Path
 
 
-APP_TITLE = "Sermon Translation - Speaker"
+APP_TITLE = "Neo Sermon"
 LOOPBACK_HOST = "127.0.0.1"
 PREFERRED_PORT = 8000
 WINDOW_WIDTH = 980
@@ -225,7 +225,7 @@ def main() -> int:
 def _loading_page() -> str:
     return """<!doctype html>
 <meta charset="utf-8">
-<title>Loading Sermon Translation</title>
+<title>Loading Neo Sermon</title>
 <style>
   body { margin:0; background:#0b0b0b; color:#e0e0e0;
          font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -239,7 +239,7 @@ def _loading_page() -> str:
   @keyframes pulse { 0%%,100%%{opacity:0.3;} 50%%{opacity:1;} }
 </style>
 <div class="center">
-  <h1><span class="dot"></span>Starting Sermon Translation</h1>
+  <h1><span class="dot"></span>Starting Neo Sermon</h1>
   <p>Loading speech and translation models. This takes about 15 seconds
      the first time.</p>
 </div>

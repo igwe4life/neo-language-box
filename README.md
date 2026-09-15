@@ -1,4 +1,4 @@
-# Local Sermon Translation — Phases 1–5
+# Neo Sermon
 
 Two-page live-interpretation system running entirely on this laptop.
 

@@ -14,8 +14,12 @@ android {
         applicationId "com.sermontranslation.listener"
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName "0.1.0"
+        // Must increase on every release that should install over the last:
+        // Android refuses an update whose versionCode is not higher than what
+        // is installed. 2 = the Neo Sermon rename, kept in step with the
+        // desktop app's 0.8.0.
+        versionCode 2
+        versionName "0.8.0"
     }
 
     // Build unsigned (sideload). We don't ship to Play Store, so no signing

@@ -23,7 +23,11 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 
 /**
- * Sermon Listener - single-activity app.
+ * Neo Sermon (listener) - single-activity app.
+ *
+ * The package stays com.sermontranslation.listener across the rename: Android
+ * identifies an app by its applicationId, so changing it would make this a
+ * different app - phones could not update in place and would end up with two.
  *
  * Two states, gated on whether we already know the server URL:
  *   PAIRING  : shows Scan QR + manual URL entry. First launch and after

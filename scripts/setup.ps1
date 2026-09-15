@@ -8,7 +8,7 @@ $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
 Write-Host ""
-Write-Host "=== Local Sermon Translation - Phase 1 setup ===" -ForegroundColor Cyan
+Write-Host "=== Neo Sermon - setup ===" -ForegroundColor Cyan
 Write-Host ""
 
 # --- 1. locate a real Python (not the Microsoft Store stub) -----------------

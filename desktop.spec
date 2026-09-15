@@ -5,8 +5,8 @@
 # NO console window in the final .exe; users see a native app, not a
 # terminal.
 #
-# Output: dist/SermonTranslationSpeaker/
-#     SermonTranslationSpeaker.exe    (double-click launcher)
+# Output: dist/NeoSermon/
+#     NeoSermon.exe                   (double-click launcher)
 #     _internal/                       (Python + libraries)
 #
 # Models are copied in by the Inno Setup script (installer.iss), not by
@@ -125,7 +125,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="SermonTranslationSpeaker",
+    name="NeoSermon",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -147,5 +147,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="SermonTranslationSpeaker",
+    name="NeoSermon",
 )

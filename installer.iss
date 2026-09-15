@@ -1,26 +1,28 @@
-; Inno Setup script for Sermon Translation Speaker.
-; Wraps the PyInstaller bundle (dist/SermonTranslationSpeaker/) plus the
-; models/ folder into a single .exe installer.
+; Inno Setup script for Neo Sermon.
+; Wraps the PyInstaller bundle (dist/NeoSermon/) into a single .exe
+; installer. The language models are NOT included - see [Files].
 ;
 ; Compile:  tools\innosetup\ISCC.exe installer.iss
-; Output:   dist/SermonTranslationSpeakerSetup.exe
+; Output:   dist/NeoSermonSetup.exe
 ;
 ; Design decisions
 ; ----------------
 ; * Per-user install by default (DefaultDirName -> LocalAppData). No admin
 ;   elevation required to install or uninstall, which matches the "sideload
 ;   unsigned" model.
-; * Compression: LZMA/max. The 1.5 GB payload compresses to ~1 GB.
 ; * Desktop + Start Menu shortcuts, both point at the .exe.
 ; * SetupIconFile omitted deliberately; installer uses a generic icon.
 
-#define AppName        "Sermon Translation Speaker"
-#define AppShortName   "SermonTranslation"
-#define AppVersion     "0.7.0"
-#define AppPublisher   "Sermon Translation"
-#define AppExeName     "SermonTranslationSpeaker.exe"
+#define AppName        "Neo Sermon"
+#define AppShortName   "NeoSermon"
+#define AppVersion     "0.8.0"
+#define AppPublisher   "Neo Sermon"
+#define AppExeName     "NeoSermon.exe"
 
 [Setup]
+; Unchanged across the rename from "Sermon Translation Speaker". Windows keys
+; an installed program on this GUID, so keeping it makes this installer an
+; UPGRADE of an existing install rather than a second app beside it.
 AppId={{A9C8E7B2-4F3D-4A8C-9E12-8F5B2C4D7E19}
 AppName={#AppName}
 AppVersion={#AppVersion}
@@ -32,13 +34,16 @@ DisableProgramGroupPage=yes
 DisableDirPage=no
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-OutputBaseFilename=SermonTranslationSpeakerSetup
+OutputBaseFilename=NeoSermonSetup
 OutputDir=dist
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#AppExeName}
 LicenseFile=
+; On a machine that already has the old install, this keeps using that folder
+; (SermonTranslation) so a models folder already copied there stays valid.
+; A fresh install gets the new NeoSermon folder.
 UsePreviousAppDir=yes
 CloseApplications=yes
 RestartApplications=no
@@ -54,7 +59,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 ; The PyInstaller-produced folder, verbatim.
-Source: "dist\SermonTranslationSpeaker\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\NeoSermon\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Models are NOT bundled. With fourteen languages they come to ~5.8 GB, which
 ; makes the installer unusable to move around - and they change far less often
 ; than the code, so re-shipping them with every build wastes hours of copying.
@@ -77,6 +82,12 @@ Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+
+[InstallDelete]
+; The executable was renamed with the app. An upgrade over an older install
+; would otherwise leave the old SermonTranslationSpeaker.exe beside the new
+; one - still launchable, and running stale code.
+Type: files; Name: "{app}\SermonTranslationSpeaker.exe"
 
 [UninstallDelete]
 ; Runtime folders the app creates alongside itself

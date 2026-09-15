@@ -3,7 +3,7 @@
 # Visual C++ redistributable prompt. Everything is bundled.
 #
 # Output:  dist/portable/                (folder ready for `start.bat`)
-#          dist/SermonTranslation.zip    (ship this to the friend)
+#          dist/NeoSermon.zip    (ship this to the friend)
 #
 # Layout inside the portable folder:
 #   python/                <- copy of the developer's Python 3.14 install
@@ -27,7 +27,7 @@ $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
 Write-Host ""
-Write-Host "=== Building portable Sermon Translation ===" -ForegroundColor Cyan
+Write-Host "=== Building portable Neo Sermon ===" -ForegroundColor Cyan
 
 # --- prerequisites --------------------------------------------------------
 $basePy = "$env:LOCALAPPDATA\Python\pythoncore-3.14-64"
@@ -83,7 +83,7 @@ Write-Host "  [5/5] Writing launcher + README..."
 
 $startBat = @'
 @echo off
-REM Sermon Translation - portable launcher.
+REM Neo Sermon - portable launcher.
 REM Double-click me. First time takes ~30s to load models. Then open the
 REM URLs printed below on the phones you want to use.
 
@@ -108,7 +108,7 @@ pause
 Set-Content -Path "$staging\start.bat" -Value $startBat -Encoding ascii
 
 $readme = @'
-# Sermon Translation - portable build
+# Neo Sermon - portable build
 
 ## What this is
 Live English -> French / Spanish sermon translation, running entirely on
@@ -165,7 +165,7 @@ Write-Host ("  location: {0}" -f (Resolve-Path $staging))
 Write-Host ("  size    : {0:N0} MB" -f $size)
 
 # --- zip it ---------------------------------------------------------------
-$zip = "dist\SermonTranslation.zip"
+$zip = "dist\NeoSermon.zip"
 if (Test-Path $zip) { Remove-Item $zip }
 Write-Host ""
 Write-Host "Compressing to $zip (this takes a couple of minutes)..." -NoNewline
