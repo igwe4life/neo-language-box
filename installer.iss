@@ -92,4 +92,5 @@ Type: files; Name: "{app}\SermonTranslationSpeaker.exe"
 [UninstallDelete]
 ; Runtime folders the app creates alongside itself
 Type: filesandordirs; Name: "{app}\certs"
+Type: files; Name: "{app}\models-verified.json"
 ; Do NOT delete models/ - the user might reuse them for a reinstall

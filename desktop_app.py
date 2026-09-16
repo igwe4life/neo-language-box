@@ -13,6 +13,7 @@ Package via PyInstaller: single .exe + Inno Setup wraps it as an installer.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import threading
@@ -171,6 +172,14 @@ def _wait_for_server(timeout: float = 60.0) -> bool:
 
 def main() -> int:
     global LOOPBACK_PORT
+    # Flush diagnostics line by line. Redirected output is block-buffered, and
+    # the frozen app ignores PYTHONUNBUFFERED, so anything printed just before a
+    # hang or a forced close was silently lost - exactly when it matters.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(line_buffering=True)
+        except Exception:
+            pass
     models = _resolve_models_dir()
     os.environ.setdefault("SERMON_MODELS_DIR", str(models))
 
@@ -188,18 +197,14 @@ def main() -> int:
     if LOOPBACK_PORT != PREFERRED_PORT:
         print(f"[desktop] port {PREFERRED_PORT} is in use; serving on {LOOPBACK_PORT}")
 
-    print(f"[desktop] launching server (models dir: {os.environ['SERMON_MODELS_DIR']})")
-    _start_server_thread()
-
-    # Open the window IMMEDIATELY - show a loading page until the server responds.
-    # Pywebview blocks the main thread from webview.start() onward, so we set up
-    # a periodic poll from a helper thread that swaps the URL when ready.
+    # Open the window IMMEDIATELY with a loading page. Pywebview owns the main
+    # thread from webview.start() onward; `_startup` runs on its own thread
+    # once the window exists.
     import webview
 
-    loading_html = _loading_page()
     window = webview.create_window(
         APP_TITLE,
-        html=loading_html,
+        html=_loading_page(),
         width=WINDOW_WIDTH,
         height=WINDOW_HEIGHT,
         resizable=True,
@@ -207,19 +212,73 @@ def main() -> int:
         text_select=True,
     )
 
-    def _swap_to_operator():
-        if _wait_for_server(timeout=90):
+    def _status(text: str) -> None:
+        try:
+            window.evaluate_js(
+                "document.getElementById('status').textContent = "
+                + json.dumps(text))
+        except Exception:
+            pass
+
+    def _startup():
+        # Verify BEFORE starting the server: a damaged model does not fail
+        # cleanly, so it is far better to stop here with a list of files than
+        # to load it and serve garbage.
+        if not _check_models(window, models, _status):
+            return
+
+        print(f"[desktop] launching server (models dir: {models})")
+        _status("Loading speech and translation models. This can take a "
+                "minute with every language enabled.")
+        _start_server_thread()
+        if _wait_for_server(timeout=180):
             print("[desktop] server ready, swapping to /operator")
             window.load_url(f"http://{LOOPBACK_HOST}:{LOOPBACK_PORT}/operator")
         else:
-            print("[desktop] server did not become ready in 90s")
-            window.load_html(_error_page("Server did not start within 90 seconds. "
+            print("[desktop] server did not become ready in 180s")
+            window.load_html(_error_page("Server did not start within 3 minutes. "
                                          "Check the console for details."))
 
-    threading.Thread(target=_swap_to_operator, daemon=True, name="server-poll").start()
-
-    webview.start()
+    webview.start(_startup)
     return 0
+
+
+def _check_models(window, models: Path, status) -> bool:
+    """Verify the models against their manifest; show a page and stop if not.
+
+    The full hash runs once and is remembered in a stamp beside the app, so
+    later launches only pay for it again if a model file actually changed.
+    """
+    from sermon.integrity import verify
+
+    last = [-1]
+
+    def progress(done, total):
+        pct = int(done * 100 / max(total, 1))
+        if pct != last[0]:
+            last[0] = pct
+            status(f"Checking the language models ({pct}%). This happens once, "
+                   "after they are copied.")
+
+    stamp = _bundled_root() / "models-verified.json"
+    try:
+        report = verify(models, stamp_path=stamp, progress=progress)
+    except Exception as exc:
+        # A broken manifest must not block a service that might otherwise run.
+        print(f"[desktop] model check skipped: {exc}")
+        return True
+
+    if not report.has_manifest:
+        print("[desktop] no models manifest; skipping integrity check")
+        return True
+    if report.ok:
+        print("[desktop] models verified" + (" (cached)" if report.cached else ""))
+        return True
+
+    print(f"[desktop] models damaged: {len(report.missing)} missing, "
+          f"{len(report.corrupt)} corrupt")
+    window.load_html(_models_damaged_page(models, report))
+    return False
 
 
 def _loading_page() -> str:
@@ -240,8 +299,8 @@ def _loading_page() -> str:
 </style>
 <div class="center">
   <h1><span class="dot"></span>Starting Neo Sermon</h1>
-  <p>Loading speech and translation models. This takes about 15 seconds
-     the first time.</p>
+  <p id="status">Loading speech and translation models. This can take a
+     minute with every language enabled.</p>
 </div>
 """.replace("%%", "%")
 
@@ -274,6 +333,45 @@ def _models_missing_page(models: Path, missing: list) -> str:
   <p><code>{models}</code></p>
   <p>Then start the app again. Nothing needs downloading and no internet is
      required once the folder is in place.</p>
+</div>
+"""
+
+
+def _models_damaged_page(models: Path, report) -> str:
+    import html
+    rows = ([("Missing", r) for r in report.missing]
+            + [("Damaged", r) for r in report.corrupt])
+    shown = rows[:15]
+    items = "".join(f"<li><b>{kind}</b> &nbsp;<code>{html.escape(rel)}</code></li>"
+                    for kind, rel in shown)
+    more = (f"<p>…and {len(rows) - len(shown)} more.</p>"
+            if len(rows) > len(shown) else "")
+    return f"""<!doctype html>
+<meta charset="utf-8">
+<style>
+  body {{ margin:0; background:#0b0b0b; color:#e0e0e0;
+          font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+          display:flex; align-items:center; justify-content:center;
+          min-height:100vh; }}
+  .box {{ max-width:680px; padding:34px; }}
+  h1 {{ color:#e05656; font-size:21px; margin:0 0 14px; }}
+  p  {{ color:#b0b0b0; line-height:1.6; font-size:14px; }}
+  ul {{ color:#b0b0b0; font-size:13px; line-height:1.8; padding-left:18px; }}
+  b  {{ color:#e8b53a; font-weight:600; }}
+  code {{ background:#171717; border:1px solid #262626; border-radius:6px;
+          padding:2px 6px; font-size:12px; color:#f2f2f2; word-break:break-all; }}
+</style>
+<div class="box">
+  <h1>Some language model files did not copy correctly</h1>
+  <p>Neo Sermon checked every model file against the list it was shipped with,
+     and these do not match. This usually means a download or copy was cut
+     short. Starting anyway could produce wrong translations, so it has
+     stopped here.</p>
+  <ul>{items}</ul>
+  {more}
+  <p>Copy those files again from the original into:</p>
+  <p><code>{html.escape(str(models))}</code></p>
+  <p>Then start Neo Sermon again. Only the files listed need replacing.</p>
 </div>
 """
 
