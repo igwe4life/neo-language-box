@@ -1,9 +1,27 @@
 ; Inno Setup script for Neo Sermon.
-; Wraps the PyInstaller bundle (dist/NeoSermon/) into a single .exe
-; installer. The language models are NOT included - see [Files].
+; Wraps the PyInstaller bundle (dist/NeoSermon/) AND the language models into
+; a single .exe installer.
 ;
-; Compile:  tools\innosetup\ISCC.exe installer.iss
+; Build, in order:
+;   python -m PyInstaller --clean --noconfirm desktop.spec
+;   python scripts/build_models_ship.py --clean
+;   tools\innosetup\ISCC.exe installer.iss
 ; Output:   dist/NeoSermonSetup.exe
+;
+; SIZE LIMIT - read before adding models
+; --------------------------------------
+; Inno Setup cannot put more than 4,200,000,000 bytes of compressed data into
+; a single Setup.exe. The bundled models alone are ~4.14 GB, so they MUST be
+; compressed to fit - stored uncompressed, the installer was 47 MB over. With
+; compression the Sept 2026 build (14 languages) is 3.62 GB, leaving ~575 MB:
+; room for three or four more languages at ~140 MB each. Check the size after
+; adding any. Past the limit compilation fails, and the choices are
+; DiskSpanning=yes (Setup.exe plus .bin slices that must travel together) or
+; dropping the fallback speech engines (parakeet-110m, whisper base.en: 337 MB).
+
+#if !FileExists(AddBackslash(SourcePath) + "models-ship\models\models-manifest.json")
+  #error models-ship\models is missing. Run: python scripts/build_models_ship.py --clean
+#endif
 ;
 ; Design decisions
 ; ----------------
@@ -36,8 +54,12 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputBaseFilename=NeoSermonSetup
 OutputDir=dist
-Compression=lzma2/max
-SolidCompression=yes
+; Compression is required for size (see the limit above), but these models are
+; already quantised and only shrink 6-20% at any setting, so /max buys almost
+; nothing over the default level while costing a great deal of build time.
+; Non-solid keeps memory use sane across 4 GB of input.
+Compression=lzma2
+SolidCompression=no
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#AppExeName}
 LicenseFile=
@@ -47,8 +69,8 @@ LicenseFile=
 UsePreviousAppDir=yes
 CloseApplications=yes
 RestartApplications=no
-; The compressed payload is large (~1 GB); disable the 3-second on-screen
-; "Ready to install" gate so users are not left staring at a spinner.
+; Keep the "Ready to install" page: with ~4 GB to unpack, it is worth one
+; confirmation before the long copy starts.
 DisableReadyPage=no
 
 [Languages]
@@ -60,20 +82,17 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 [Files]
 ; The PyInstaller-produced folder, verbatim.
 Source: "dist\NeoSermon\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Models are NOT bundled. With fourteen languages they come to ~5.8 GB, which
-; makes the installer unusable to move around - and they change far less often
-; than the code, so re-shipping them with every build wastes hours of copying.
-; They are copied to {app}\models once per machine instead; desktop_app.py
-; checks for them at startup and says exactly what is missing.
+; The language models: only what the app loads, as assembled by
+; scripts/build_models_ship.py, including models-manifest.json so the app's
+; first-launch integrity check covers the installed copy.
+Source: "models-ship\models\*"; DestDir: "{app}\models"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Where each model came from and its licence. Two are non-commercial, and this
+; installer redistributes them, so the notice travels with it.
+Source: "models-ship\README.txt"; DestDir: "{app}"; DestName: "MODELS-README.txt"; Flags: ignoreversion
 ; Application vocab files (already inside the bundle's _internal/, but
 ; also placed at the app root so `SERMON_VOCAB_FILE` overrides work).
 Source: "vocabulary.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "phrases.yo.txt";  DestDir: "{app}"; Flags: ignoreversion
-
-[Dirs]
-; Created empty so the destination for the model folder is obvious, and so
-; the uninstaller knows about it.
-Name: "{app}\models"
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
@@ -90,7 +109,11 @@ Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait
 Type: files; Name: "{app}\SermonTranslationSpeaker.exe"
 
 [UninstallDelete]
-; Runtime folders the app creates alongside itself
+; Runtime files the app creates alongside itself. sermon/tls.py writes the
+; self-signed certificate two levels above itself, which in the installed app
+; is _internal\certs - cleaning only {app}\certs left the key and certificate
+; behind after uninstall.
+Type: filesandordirs; Name: "{app}\_internal\certs"
 Type: filesandordirs; Name: "{app}\certs"
 Type: files; Name: "{app}\models-verified.json"
-; Do NOT delete models/ - the user might reuse them for a reinstall
+; The bundled models are installer-owned files, so uninstalling removes them.

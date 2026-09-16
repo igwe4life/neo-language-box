@@ -78,9 +78,10 @@ def _resolve_models_dir() -> Path:
 def _missing_models(models: Path) -> list:
     """What the app needs but cannot find.
 
-    Models ship separately from the installer, so "not copied yet" is a normal
-    first-run state rather than a corrupt install. Saying exactly which pieces
-    are absent beats a stack trace ninety seconds into a loading screen.
+    The installer bundles the models, so this should only trip if they were
+    moved or deleted, or SERMON_MODELS_DIR points at the wrong place. Saying
+    exactly which pieces are absent beats a stack trace ninety seconds into a
+    loading screen.
     """
     needed = [
         ("speech recognition", models / "parakeet-0.6b" / "encoder.int8.onnx"),
@@ -324,15 +325,15 @@ def _models_missing_page(models: Path, missing: list) -> str:
   .path {{ margin:18px 0; }}
 </style>
 <div class="box">
-  <h1>The language models have not been copied yet</h1>
-  <p>The app installs without them - they are about 5.8&nbsp;GB and are copied
-     separately, once per machine.</p>
+  <h1>The language models could not be found</h1>
+  <p>The installer puts them beside the app, so this usually means they were
+     moved or deleted, or <code>SERMON_MODELS_DIR</code> points somewhere that
+     does not have them.</p>
   <p>Missing:</p>
   <ul>{items}</ul>
-  <p class="path">Copy the <code>models</code> folder here:</p>
+  <p class="path">Neo Sermon looked in:</p>
   <p><code>{models}</code></p>
-  <p>Then start the app again. Nothing needs downloading and no internet is
-     required once the folder is in place.</p>
+  <p>Reinstalling Neo Sermon restores them. No internet is required.</p>
 </div>
 """
 
