@@ -1,27 +1,28 @@
 # Neo Sermon
 
-Two-page live-interpretation system running entirely on this laptop.
+Live interpretation into 13 languages, running entirely on one laptop.
 
-* Speaker opens `/speaker` on their phone, taps a button, becomes the mic.
-* Listeners open `/` on their phones, pick a language, hear it live.
+* The operator opens the desktop app, picks an audio source (the laptop's own
+  audio, a microphone, or line-in from a mixer) and presses Start.
+* Listeners scan the QR code, pick a language, and hear it live on their phones.
 
-Everything (STT, translation, TTS) runs locally. No cloud, no accounts, no
-API keys. After the one-time model download the machine can be offline.
-
-Everything runs on this laptop. No OpenAI, no Google, no Azure, no DeepL,
-no API keys. After the one-time model download the machine can be offline.
+Everything runs locally: no cloud, no accounts, no API keys, and **no LLMs**.
+Once installed the machine can stay offline.
 
 ## Stack
 
 | Stage | Component | Why |
 |---|---|---|
-| Capture | `sounddevice` (PortAudio) 16 kHz mono | bundled wheel on Windows, no extra install |
-| Segmentation | energy VAD in numpy | ~0 % CPU, no extra model to load |
-| STT | `faster-whisper` `base.en`, int8 | CTranslate2 backend, no PyTorch |
-| MT | OPUS-MT `en-fr` + `en-yo` (Marian) → CTranslate2 int8 | same engine as STT, 79 + 51 MB, no PyTorch |
-| TTS | Piper `fr_FR-siwis-medium` (ONNX) | same onnxruntime, ~99 MB RAM, rtf 0.09 |
-| Streaming | `websockets` server + one HTML page | pure Python, 217 KB, no CDN |
+| Capture | PyAudioWPatch (WASAPI loopback) or `sounddevice`, resampled to 16 kHz mono | captures system audio, a mic, or line-in; switchable while running |
+| Segmentation | energy VAD in numpy + Silero VAD | ~0 % CPU for the first pass; Silero stops silence becoming invented sentences |
+| STT | NVIDIA Parakeet TDT 0.6B, int8 (sherpa-onnx) | ~8x faster than Whisper `base.en` on the same clip |
+| MT | OPUS-MT (9 languages) + NLLB-200 1.3B (4 African languages), CTranslate2 int8 | one engine each where it wins; NLLB decodes its four in one batch |
+| TTS | Piper (10 languages), Meta MMS (2), VITS-OpenBible-Igbo (1), all ONNX | no source covers all of them; one onnxruntime for all three |
+| Streaming | `websockets` server + one HTML page | pure Python, no CDN |
 | Output | console + speech + broadcast sinks | one per phase, `pipeline.py` unchanged |
+
+Full inventory, fallbacks, licences and the reasoning behind each choice:
+**[docs/MODELS.md](docs/MODELS.md)**.
 
 ## Install
 
