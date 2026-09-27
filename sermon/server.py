@@ -30,6 +30,7 @@ import json
 import logging
 import socket
 import threading
+import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,6 +72,11 @@ class Broadcaster:
 
     def __init__(self, history_size: int = 20, audio_size: int = 30):
         self._clients: set[ServerConnection] = set()
+        # The operator's own dashboard also opens a /ws connection (to receive
+        # live translations), but it is not a listener - counting it would
+        # inflate "listeners connected" by one every time the dashboard is
+        # open. Kept in a separate set so it still receives broadcasts.
+        self._operator_clients: set[ServerConnection] = set()
         # Which language each connected phone is listening to, so the pipeline
         # can skip synthesising audio nobody will play. Keyed by connection so
         # a disconnect releases its claim automatically.
@@ -83,6 +89,10 @@ class Broadcaster:
         # shown as a choice.
         self.languages: list[str] = []
         self.language_meta: dict = {}
+        # Operator-editable session labels, shown on the dashboard. Purely
+        # descriptive - never sent to a client, never affects the pipeline.
+        self.session_meta: dict = {"event": "", "session": ""}
+        self.started_at = time.monotonic()
         self._lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self.total_delivered = 0
@@ -98,10 +108,14 @@ class Broadcaster:
     def client_count(self) -> int:
         return len(self._clients)
 
+    @property
+    def uptime_seconds(self) -> float:
+        return time.monotonic() - self.started_at
+
     # -- server side (asyncio) --------------------------------------
 
-    async def register(self, ws: ServerConnection) -> None:
-        self._clients.add(ws)
+    async def register(self, ws: ServerConnection, is_operator: bool = False) -> None:
+        (self._operator_clients if is_operator else self._clients).add(ws)
         self.peak_clients = max(self.peak_clients, len(self._clients))
         with self._lock:
             history = list(self._history)
@@ -112,6 +126,7 @@ class Broadcaster:
 
     def unregister(self, ws: ServerConnection) -> None:
         self._clients.discard(ws)
+        self._operator_clients.discard(ws)
         self._client_lang.pop(ws, None)
 
     def set_client_language(self, ws: ServerConnection, lang: str) -> None:
@@ -126,15 +141,34 @@ class Broadcaster:
         """
         return set(list(self._client_lang.values()))
 
+    def language_counts(self) -> dict:
+        """How many connected listeners are on each language.
+
+        A phone that has connected but not yet sent its `{type:"lang"}` message
+        (still on the picker screen) counts under "" - shown to the operator as
+        "choosing", not silently dropped from the total.
+        """
+        langs = list(self._client_lang.values())
+        counts: dict = {}
+        for lang in langs:
+            counts[lang] = counts.get(lang, 0) + 1
+        unset = len(self._clients) - len(langs)
+        if unset > 0:
+            counts[""] = unset
+        return counts
+
     async def _deliver(self, payload: str) -> None:
         dead: list[ServerConnection] = []
-        for ws in list(self._clients):
+        # The operator dashboard needs the same live-translation stream as a
+        # listener, just not counted as one.
+        for ws in list(self._clients) + list(self._operator_clients):
             try:
                 await ws.send(payload)
             except Exception:
                 dead.append(ws)
         for ws in dead:
             self._clients.discard(ws)
+            self._operator_clients.discard(ws)
         self.total_delivered += (len(self._clients))
 
     # -- pipeline side (any thread) ---------------------------------
@@ -233,7 +267,7 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
                 ("Content-Length", str(len(body))),
                 ("Cache-Control", "no-store"),
             ]), body)
-        if path.startswith("/api/") and request.method == "POST":
+        if path.startswith("/api/") and path != "/api/session" and request.method == "POST":
             action = path[len("/api/"):]
             src = mic_source
             resp: dict = {"ok": False, "error": "no audio source is running"}
@@ -287,6 +321,10 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
             body = json.dumps({
                 "state": state,
                 "listeners": broadcaster.client_count,
+                "listener_langs": broadcaster.language_counts(),
+                "languages_active": len(broadcaster.languages),
+                "uptime_seconds": round(broadcaster.uptime_seconds, 1),
+                "session": broadcaster.session_meta,
                 "level_db": getattr(src, "last_db", -120.0) if src else -120.0,
                 "peak_db": getattr(src, "peak_hold_db", -120.0) if src else -120.0,
                 "in_speech": getattr(src, "in_speech", False) if src else False,
@@ -299,6 +337,21 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
                 ("Content-Type", "application/json"),
                 ("Content-Length", str(len(body))),
                 ("Cache-Control", "no-store"),
+            ]), body)
+        if path == "/api/session" and request.method == "POST":
+            # Purely descriptive labels for the dashboard's Session card - not
+            # used anywhere in the pipeline, so no validation beyond a length
+            # cap to keep a stray paste from blowing up the display.
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(request.path).query)
+            if "event" in q:
+                broadcaster.session_meta["event"] = q["event"][0][:80]
+            if "session" in q:
+                broadcaster.session_meta["session"] = q["session"][0][:80]
+            body = json.dumps({"ok": True, "session": broadcaster.session_meta}).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
             ]), body)
         if path == "/api/net":
             # The URLs a PHONE should use. The operator window itself is on
@@ -434,12 +487,17 @@ def _make_handler(broadcaster: Broadcaster, mic_source=None):
         if path.startswith("/mic"):
             await _mic_handler(ws, mic_source)
         else:
-            await _listener_handler(ws, broadcaster)
+            # The operator dashboard marks itself with ?role=operator so it is
+            # not counted as a listener (see Broadcaster._operator_clients).
+            _, _, query = path.partition("?")
+            is_operator = "role=operator" in query
+            await _listener_handler(ws, broadcaster, is_operator)
     return _handler
 
 
-async def _listener_handler(ws: ServerConnection, broadcaster: Broadcaster) -> None:
-    await broadcaster.register(ws)
+async def _listener_handler(ws: ServerConnection, broadcaster: Broadcaster,
+                            is_operator: bool = False) -> None:
+    await broadcaster.register(ws, is_operator=is_operator)
     try:
         async for raw in ws:
             # The only thing a listener tells us is which language it is on,
