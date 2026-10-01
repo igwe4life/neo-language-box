@@ -11,13 +11,16 @@
 ; SIZE LIMIT - read before adding models
 ; --------------------------------------
 ; Inno Setup cannot put more than 4,200,000,000 bytes of compressed data into
-; a single Setup.exe. The bundled models alone are ~4.14 GB, so they MUST be
-; compressed to fit - stored uncompressed, the installer was 47 MB over. With
-; compression the Sept 2026 build (14 languages) is 3.62 GB, leaving ~575 MB:
-; room for three or four more languages at ~140 MB each. Check the size after
-; adding any. Past the limit compilation fails, and the choices are
-; DiskSpanning=yes (Setup.exe plus .bin slices that must travel together) or
-; dropping the fallback speech engines (parakeet-110m, whisper base.en: 337 MB).
+; a SINGLE Setup.exe. The Sept 2026 build (14 languages) was already at
+; 3.62 GB compressed with ~575 MB of headroom left. The Oct 2026 wave (11 more
+; languages, 25 total) pushed well past that, so DiskSpanning is now ON:
+; Setup.exe plus numbered disk1.bin, disk2.bin, ... slices (DiskSliceSize=max
+; keeps the slice count as low as possible). All of them must ship and be
+; extracted together - see the [Run]/output note below. If a future language
+; wave makes even this unwieldy, the remaining lever is dropping the fallback
+; speech engines (parakeet-110m, whisper base.en: 337 MB).
+DiskSpanning=yes
+DiskSliceSize=max
 
 #if !FileExists(AddBackslash(SourcePath) + "models-ship\models\models-manifest.json")
   #error models-ship\models is missing. Run: python scripts/build_models_ship.py --clean

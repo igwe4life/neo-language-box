@@ -172,10 +172,22 @@ def check_models(rep: Report, cfg: AppConfig) -> None:
         rep.line(FAIL, f"Whisper ({cfg.stt.model})",
                  f"missing at {w} - run: python scripts/fetch_models.py")
 
+    from .config import NLLB_TARGETS
+    nllb_dir = cfg.models_dir / "nllb-1.3b"
+    nllb_ok = (nllb_dir / "model.bin").exists() and (nllb_dir / "sentencepiece.bpe.model").exists()
+    nllb_reported = False
     for i, target in enumerate(cfg.mt.targets):
-        m = cfg.mt_dir_for(target)
         # Primary target is required; secondaries just warn.
         status_missing = FAIL if i == 0 else WARN
+        if target in NLLB_TARGETS:
+            if not nllb_reported:
+                nllb_reported = True
+                if nllb_ok:
+                    rep.line(OK, "NLLB-200 1.3B", f"{_dir_size_mb(nllb_dir):.0f} MB at {nllb_dir}")
+                else:
+                    rep.line(status_missing, "NLLB-200 1.3B", f"missing at {nllb_dir}")
+            continue
+        m = cfg.mt_dir_for(target)
         if (m / "model.bin").exists() and (m / "source.spm").exists():
             rep.line(OK, f"OPUS-MT en-{target}", f"{_dir_size_mb(m):.0f} MB at {m}")
         else:
@@ -358,11 +370,42 @@ def check_models_runtime(rep: Report, cfg: AppConfig, audio) -> None:
 
     # --- MT (one per configured target) ---
     from dataclasses import replace as _replace
-    from .config import phrase_file_for
-    from .mt import MarianCT2Translator, OverrideTranslator, load_phrase_overrides
+    from .config import NLLB_TARGETS, phrase_file_for
+    from .mt import MarianCT2Translator, NllbTranslator, OverrideTranslator, load_phrase_overrides
 
     translators: dict[str, object] = {}
+
+    # NLLB MUST be constructed before any OPUS-MT ctranslate2.Translator in
+    # this process, not after - loading even a small OPUS-MT model first and
+    # NLLB-200 second reliably crashes with "mkl_malloc: failed to allocate
+    # memory" on this class of machine, discovered by adding this exact test.
+    # run.py's real --serve path already loads NLLB first for unrelated
+    # reasons (it is the shared base every NLLB target clones from) and so
+    # was never exposed to this; doctor must match that order deliberately.
+    nllb_base = None
+    nllb_wanted = [t for t in cfg.mt.targets if t in NLLB_TARGETS]
+    if nllb_wanted:
+        nllb_dir = cfg.models_dir / "nllb-1.3b"
+        if (nllb_dir / "model.bin").exists():
+            try:
+                t0 = time.perf_counter()
+                nllb_base = NllbTranslator(nllb_dir, cfg.mt, NLLB_TARGETS[nllb_wanted[0]])
+                load_s = time.perf_counter() - t0
+                after = _rss_mb()
+                rep.line(OK, "NLLB-200 1.3B loaded", f"{load_s:.1f}s, +{after - base_rss:.0f} MB")
+                base_rss = after
+            except Exception as exc:
+                rep.line(FAIL, "NLLB-200 1.3B load", str(exc))
+        # else already flagged in check_models
+
     for target in cfg.mt.targets:
+        if target in NLLB_TARGETS:
+            if nllb_base is None:
+                continue      # missing or failed to load, already reported
+            tr = nllb_base.for_target(NLLB_TARGETS[target])
+            rules = load_phrase_overrides(phrase_file_for(target))
+            translators[target] = OverrideTranslator(tr, rules) if rules else tr
+            continue
         model_dir = cfg.mt_dir_for(target)
         if not (model_dir / "model.bin").exists():
             continue          # already flagged in check_models

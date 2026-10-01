@@ -136,6 +136,14 @@ class VitsSpeaker(Speaker):
             self.blank = 0
             self.sample_rate = 16000
 
+        # Amharic's MMS-TTS checkpoint was trained on romanised text (its
+        # vocabulary is 28 plain Latin letters, no Ge'ez) - see
+        # scripts/export_mms_amharic.py, which writes this flag file.
+        self._uroman = None
+        if (d / "romanize.flag").exists():
+            import uroman
+            self._uroman = uroman.Uroman()
+
     @staticmethod
     def _read_tokens(path: Path) -> dict:
         vocab: dict = {}
@@ -148,6 +156,8 @@ class VitsSpeaker(Speaker):
         return vocab
 
     def _encode(self, text: str) -> list:
+        if self._uroman is not None:
+            text = self._uroman.romanize_string(text)
         ids = [self.vocab[c] for c in text.lower() if c in self.vocab]
         seq = [self.blank] * (len(ids) * 2 + 1)
         seq[1::2] = ids

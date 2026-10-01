@@ -77,6 +77,22 @@ OPUS_MT_URLS = {
     "ha": "https://object.pouta.csc.fi/OPUS-MT-models/en-ha/opus+bt-2020-05-23.zip",
     "zu": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-zul/opus+bt-2021-03-12.zip",
     "sw": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-swa/opus+bt-2021-04-10.zip",
+
+    # --- third language wave ---------------------------------------------
+    # Verified SentencePiece (not BPE) via each release's own README before
+    # adding - see the en-es note above for why that matters. Polish, Amharic,
+    # Somali, Bengali, Korean and Urdu are NOT here: NLLB-200 serves them
+    # instead (see NLLB_TARGETS in config.py), either because no official
+    # direct OPUS-MT release exists or because the one that does scored low
+    # on its own model card.
+    "ja": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-jpn/opus+bt-2021-04-10.zip",
+    "vi": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-vie/opus+bt-2021-04-10.zip",
+    "tl": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-tgl/opus+bt-2021-04-10.zip",
+    "id": "https://object.pouta.csc.fi/OPUS-MT-models/en-id/opus-2019-12-18.zip",
+    # The "tc-big" release: a larger transformer with meaningfully better
+    # BLEU than the standard release, picked deliberately for translation
+    # quality even though the download is ~830 MB rather than ~260 MB.
+    "tr": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-tur/opusTCv20210807+bt_transformer-big_2022-02-25.zip",
 }
 
 # Piper TTS voices. ~60 MB each; runs on the onnxruntime we already have.
@@ -105,6 +121,20 @@ PIPER_VOICES = {
     # Swahili is the only one of the African targets Piper covers. Igbo,
     # Yoruba and Hausa use VITS voices instead - see MMS_VOICES below.
     "sw_CD-lanfrica-medium": f"{_PIPER_BASE}/sw/sw_CD/lanfrica/medium/sw_CD-lanfrica-medium.onnx",
+
+    # --- third language wave ---------------------------------------------
+    # Every key below was checked against the live rhasspy/piper-voices file
+    # tree (not the static VOICES.md, which lags) before adding.
+    "ko_KR-kss-medium":        f"{_PIPER_BASE}/ko/ko_KR/kss/medium/ko_KR-kss-medium.onnx",
+    "ja_JP-hi_fi_captain-medium": f"{_PIPER_BASE}/ja/ja_JP/hi_fi_captain/medium/ja_JP-hi_fi_captain-medium.onnx",
+    "vi_VN-vais1000-medium":   f"{_PIPER_BASE}/vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium.onnx",
+    "id_ID-news_tts-medium":   f"{_PIPER_BASE}/id/id_ID/news_tts/medium/id_ID-news_tts-medium.onnx",
+    "tr_TR-dfki-medium":       f"{_PIPER_BASE}/tr/tr_TR/dfki/medium/tr_TR-dfki-medium.onnx",
+    "pl_PL-darkman-medium":    f"{_PIPER_BASE}/pl/pl_PL/darkman/medium/pl_PL-darkman-medium.onnx",
+    "bn_BD-google-medium":     f"{_PIPER_BASE}/bn/bn_BD/google/medium/bn_BD-google-medium.onnx",
+    "ur_PK-fasih-medium":      f"{_PIPER_BASE}/ur/ur_PK/fasih/medium/ur_PK-fasih-medium.onnx",
+    # Tagalog, Somali and Amharic are absent: Piper has no voice for any of
+    # them - see MMS_VOICES below.
 }
 
 # Non-Piper VITS voices, for languages Piper has none. Same onnxruntime, a
@@ -123,6 +153,14 @@ MMS_VOICES = {
             ["yor/model.onnx", "yor/tokens.txt"]),
     "hau": ("willwade/mms-tts-multilingual-models-onnx",
             ["hau/model.onnx", "hau/tokens.txt"]),
+    "tgl": ("willwade/mms-tts-multilingual-models-onnx",
+            ["tgl/model.onnx", "tgl/tokens.txt"]),
+    "som": ("willwade/mms-tts-multilingual-models-onnx",
+            ["som/model.onnx", "som/tokens.txt"]),
+    # Amharic is NOT here: this repo has no "amh" folder. facebook/mms-tts-amh
+    # is converted separately by scripts/export_mms_amharic.py because it also
+    # needs uroman romanisation at inference time - see that script and
+    # sermon/tts.py's VitsSpeaker for why.
 }
 COQUI_VOICES = {
     "ibo": ("multilingual-tts/VITS-OpenBible-Igbo",
@@ -284,6 +322,33 @@ def fetch_voice(name: str) -> None:
     print(f"      done, {size_mb:.0f} MB")
 
 
+# MMS_VOICES is keyed by ISO 639-3 (what the source repo uses); VITS_VOICES
+# in config.py is keyed by the app's own two-letter code and names the
+# directory under models/tts/ the app actually reads from.
+MMS_CODE_TO_APP_CODE = {"yor": "yo", "hau": "ha", "tgl": "tl", "som": "so"}
+
+
+def fetch_mms_voice(code: str) -> None:
+    """Pre-converted MMS-TTS ONNX voice, keyed by its ISO 639-3 code
+    (e.g. "tgl" for Tagalog)."""
+    from huggingface_hub import hf_hub_download
+
+    target = MODELS / "tts" / MMS_CODE_TO_APP_CODE[code]
+    onnx = target / "model.onnx"
+    if onnx.exists() and (target / "tokens.txt").exists():
+        print(f"[skip] MMS voice {code} already present at {target}")
+        return
+
+    print(f"[3/3] MMS voice {code} -> {target}")
+    target.mkdir(parents=True, exist_ok=True)
+    repo_id, files = MMS_VOICES[code]
+    for rel in files:
+        downloaded = hf_hub_download(repo_id=repo_id, filename=rel)
+        shutil.copy2(downloaded, target / Path(rel).name)
+    size_mb = sum(f.stat().st_size for f in target.rglob("*") if f.is_file()) / 1024 / 1024
+    print(f"      done, {size_mb:.0f} MB")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -293,6 +358,8 @@ def main(argv=None) -> int:
                     help="translation target (repeatable). Default: fr")
     ap.add_argument("--voice", action="append", choices=list(PIPER_VOICES),
                     help="Piper TTS voice (repeatable). Default: fr_FR-siwis-medium")
+    ap.add_argument("--mms", action="append", choices=list(MMS_VOICES),
+                    help="MMS-TTS voice by ISO 639-3 code (repeatable), e.g. tgl, som")
     ap.add_argument("--no-voice", action="store_true", help="skip the TTS voice download")
     ap.add_argument("--keep-temp", action="store_true",
                     help="keep the raw 278 MB OPUS-MT download")
@@ -302,6 +369,7 @@ def main(argv=None) -> int:
     langs = args.lang or ["fr", "es"]
     voices = [] if args.no_voice else (args.voice or
                                        ["fr_FR-siwis-medium", "es_ES-davefx-medium"])
+    mms_voices = [] if args.no_voice else (args.mms or [])
 
     print()
     print("Downloading models. This is the ONLY step that needs internet.")
@@ -314,6 +382,8 @@ def main(argv=None) -> int:
         fetch_translation(l, args.keep_temp)
     for v in voices:
         fetch_voice(v)
+    for m in mms_voices:
+        fetch_mms_voice(m)
 
     total = sum(f.stat().st_size for f in MODELS.rglob("*") if f.is_file()) / 1024 / 1024
     print()

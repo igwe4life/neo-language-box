@@ -14,3 +14,4 @@ psutil>=5.9                # diagnostics: RAM / CPU reporting
 huggingface-hub>=0.23      # one-time model download (offline afterwards)
 sherpa-onnx>=1.13,<2       # NVIDIA Parakeet STT (alternative to Whisper) + Silero VAD
 cryptography>=42           # self-signed TLS cert generation for LAN HTTPS
+uroman>=1.3,<2             # romanises Amharic text before its MMS-TTS voice (Latin-script vocab)
