@@ -51,13 +51,14 @@ class Pipeline:
     """
 
     def __init__(self, transcriber: Transcriber, translators: dict[str, Translator],
-                 sinks: list | None = None, sample_rate: int = 16000):
+                 sinks: list | None = None, sample_rate: int = 16000, recorder=None):
         if not translators:
             raise ValueError("Pipeline needs at least one translator")
         self.transcriber = transcriber
         self.translators = translators
         self.sinks = sinks if sinks is not None else []
         self.sample_rate = sample_rate
+        self.recorder = recorder
         self.processed = 0
         self.skipped_empty = 0
         self.clipped = 0
@@ -67,6 +68,12 @@ class Pipeline:
         if not stt.text:
             self.skipped_empty += 1
             return None
+
+        # Same gate as everything else downstream: an utterance that was
+        # dropped as noise/silence is not recorded either, so the source file
+        # and every per-language file stay aligned on "what was actually said".
+        if self.recorder is not None:
+            self.recorder.write_source(utt.audio, self.sample_rate)
 
         translations: dict[str, str] = {}
         mt_seconds: dict[str, float] = {}

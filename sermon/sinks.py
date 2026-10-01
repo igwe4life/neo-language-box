@@ -177,12 +177,20 @@ class BroadcastSink(Sink):
     output is instant either way.
     """
 
-    def __init__(self, broadcaster, speakers: dict[str, Speaker] | None = None):
+    def __init__(self, broadcaster, speakers: dict[str, Speaker] | None = None,
+                 recorder=None):
         """`speakers` maps target language ("fr", "es", ...) to a loaded
         PiperSpeaker. Every listed language gets audio synthesised and
-        cached; a listener on that language fetches it by HTTP."""
+        cached; a listener on that language fetches it by HTTP.
+
+        `recorder`, if given, can ask for a language's audio to be
+        synthesised for RECORDING even when no listener is on it - the
+        Recorder is the one place that needs that, and it gets the clip this
+        emits instead of synthesising its own copy.
+        """
         self.broadcaster = broadcaster
         self.speakers = speakers or {}
+        self.recorder = recorder
         self.counter = 0
         self.audio_generated = 0
         self.audio_seconds_generated = 0.0
@@ -197,8 +205,12 @@ class BroadcastSink(Sink):
         # scales badly with the target count. Text goes to everyone because it
         # is cheap and a listener switching language should see it instantly;
         # audio is produced ONLY for languages someone is actually listening
-        # to. Ten languages offered costs the same as three in use.
+        # to, OR a language the recorder has been told to capture. Ten
+        # languages offered costs the same as three in use (plus whatever is
+        # being recorded).
         wanted = self.broadcaster.active_languages()
+        if self.recorder is not None:
+            wanted = wanted | self.recorder.wanted_languages()
         pending = [lang for lang in self.speakers
                    if result.translations.get(lang) and lang in wanted]
         message = {
@@ -237,6 +249,9 @@ class BroadcastSink(Sink):
                     self.audio_generated += 1
                     self.audio_seconds_generated += speech.duration
                     self.synth_seconds += speech.compute_seconds
+                    if self.recorder is not None:
+                        label = (self.broadcaster.language_meta.get(lang) or {}).get("native", lang.upper())
+                        self.recorder.write_lang(lang, speech.audio, speech.sample_rate, label)
             except Exception as exc:
                 self.synth_failures += 1
                 print(f"\n  !! server audio failed for {lang}: {exc}",

@@ -29,17 +29,26 @@
             env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
 
-  /* Top language chips - unobtrusive, but tappable */
+  /* Top language chips - a HORIZONTALLY scrolling strip, not a wrapping grid.
+     With up to 14 languages, wrapping onto several rows pushed the
+     visualiser/caption down with no way to scroll back up to the rest - this
+     avoids that entirely rather than needing a scroll fix for it. */
   #top {
-    display: flex; align-items: center; justify-content: center; gap: 10px;
-    padding: 14px 12px 6px;
+    display: flex; align-items: center; gap: 10px; z-index: 1;
+    padding: 14px 44px 6px 12px;
+    overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap;
+    scrollbar-width: none; -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
+    mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
   }
+  #top::-webkit-scrollbar { display: none; }
   .chip {
     background: var(--pill-bg); color: var(--fg);
     border: 1px solid var(--pill-border); border-radius: 999px;
     padding: 8px 18px; font-size: 15px; font-weight: 600;
     letter-spacing: .5px; cursor: pointer; user-select: none;
     display: inline-flex; align-items: center; gap: 6px;
+    flex-shrink: 0;
     transition: background 0.2s, border-color 0.2s;
   }
   .chip.on {
@@ -47,14 +56,21 @@
     color: #fff;
   }
   .chip .flag { font-size: 17px; }
+  .chip .check { display: none; font-size: 13px; }
+  .chip.on .check { display: inline; }
   #mute {
-    position: absolute; top: 12px; right: 12px;
+    position: absolute; top: 12px; right: 12px; z-index: 2;
     background: transparent; border: none; color: var(--muted);
     font-size: 22px; padding: 8px; cursor: pointer;
   }
   #mute.on { color: var(--accent); }
+  #report-btn {
+    position: absolute; top: 14px; right: 58px; z-index: 2;
+    background: transparent; border: none; color: var(--muted);
+    font-size: 19px; padding: 8px; cursor: pointer; line-height: 1;
+  }
   #status {
-    position: absolute; top: 22px; left: 20px;
+    position: absolute; top: 22px; left: 20px; z-index: 2;
     width: 8px; height: 8px; border-radius: 50%;
     background: #b93a3a; box-shadow: 0 0 8px currentColor;
   }
@@ -85,25 +101,42 @@
     font-size: clamp(16px, 4.5vw, 22px); font-weight: 400;
   }
 
-  /* First-tap gate - full-screen language pick + audio unlock */
+  /* First-tap gate - full-screen language pick + audio unlock.
+
+     With up to 14 languages, the grid can be taller than a phone screen.
+     justify-content:flex-start (not center) plus overflow-y:auto on the gate
+     itself is the outer safety net; .langgroup additionally scrolls WITHIN
+     its own bounded height so the brand/subtitle/Start-button stay in view
+     and only the language grid scrolls - avoids a fixed-height section ever
+     hiding a language with no way to reach it. */
   #gate {
     position: fixed; inset: 0; z-index: 100;
     display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 30px;
-    padding: 24px;
+    align-items: center; justify-content: flex-start; gap: 22px;
+    padding: calc(36px + env(safe-area-inset-top)) 24px
+             calc(28px + env(safe-area-inset-bottom));
     background: radial-gradient(circle at 50% 40%, #142238 0%, #000 80%);
     text-align: center;
+    overflow-y: auto;
   }
   #gate.hidden { display: none; }
   #gate .brand {
     font-size: 22px; font-weight: 600; letter-spacing: .4px;
-    color: #fff;
+    color: #fff; flex-shrink: 0;
   }
   #gate .sub {
     color: var(--muted); font-size: 15px; max-width: 320px; line-height: 1.5;
+    flex-shrink: 0;
   }
-  #gate .langgroup { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+  #gate .langgroup {
+    display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
+    max-height: 48vh; overflow-y: auto; width: 100%; max-width: 480px;
+    padding: 6px; align-content: flex-start;
+  }
+  #gate .langgroup::-webkit-scrollbar { width: 6px; }
+  #gate .langgroup::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 6px; }
   #gate .chip { padding: 14px 26px; font-size: 17px; }
+  #gate .go { flex-shrink: 0; }
   #gate .go {
     background: var(--accent-strong); color: white; border: none;
     border-radius: 999px; padding: 18px 40px;
@@ -120,6 +153,46 @@
     0%, 100% { box-shadow: 0 8px 28px rgba(43, 141, 255, 0.35); }
     50%      { box-shadow: 0 8px 46px rgba(43, 141, 255, 0.85); }
   }
+
+  .hidden { display: none !important; }
+
+  /* -------- report sheet (item 4) -------- */
+  #report-sheet {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(2px);
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .report-card {
+    width: 100%; max-width: 420px;
+    background: #111; border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px 20px 0 0;
+    padding: 22px 20px calc(18px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .report-title {
+    color: #fff; font-size: 16px; font-weight: 700; text-align: center;
+    margin-bottom: 4px;
+  }
+  .report-opt {
+    background: rgba(255,255,255,0.06); color: var(--fg);
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 12px;
+    padding: 15px; font-size: 15px; font-weight: 600; cursor: pointer;
+    text-align: center;
+  }
+  .report-opt:active { background: rgba(255,255,255,0.14); }
+  .report-cancel {
+    background: transparent; color: var(--muted); border: none;
+    padding: 12px; font-size: 14px; cursor: pointer; margin-top: 4px;
+  }
+  #report-toast {
+    position: fixed; left: 50%; bottom: calc(26px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    background: rgba(34, 197, 94, 0.95); color: #06220f;
+    padding: 12px 20px; border-radius: 999px; font-size: 14px; font-weight: 700;
+    z-index: 210; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    transition: opacity .25s, transform .25s;
+  }
+  #report-toast.toast-off { opacity: 0; transform: translateX(-50%) translateY(10px); pointer-events: none; }
 </style>
 </head>
 <body>
@@ -134,6 +207,7 @@
 </div>
 
 <div id="status" aria-label="connection"></div>
+<button id="report-btn" aria-label="report an issue" title="Report an issue">⚑</button>
 <button id="mute" class="on" aria-label="mute">🔊</button>
 
 <div id="top"></div>
@@ -141,6 +215,19 @@
 <div id="stage"><canvas id="viz"></canvas></div>
 
 <div id="caption" class="empty">waiting for the speaker…</div>
+
+<!-- Report sheet (item 4): one tap to report, no form to fill in. -->
+<div id="report-sheet" class="hidden">
+  <div class="report-card">
+    <div class="report-title">Report an issue</div>
+    <button class="report-opt" data-type="translation">Wrong translation</button>
+    <button class="report-opt" data-type="audio">No / bad audio</button>
+    <button class="report-opt" data-type="technical">Technical issue</button>
+    <button class="report-opt" data-type="other">Something else</button>
+    <button class="report-cancel" id="report-cancel">Cancel</button>
+  </div>
+</div>
+<div id="report-toast" class="toast-off">Thanks - reported to the operator</div>
 
 <script>
 "use strict";
@@ -185,6 +272,12 @@ function buildLangChips() {
     f.textContent = m.flag || "";
     b.appendChild(f);
     b.appendChild(document.createTextNode(label));
+    // Extra, unambiguous "this one is selected" marker beyond just colour -
+    // readable even for a colour-blind listener or in bright sunlight.
+    const chk = document.createElement("span");
+    chk.className = "check";
+    chk.textContent = "✓";
+    b.appendChild(chk);
     return b;
   };
   gateBox.innerHTML = "";
@@ -250,6 +343,34 @@ paintLangs(); paintMute();
 muteBtn.addEventListener("click", () => {
   voiceOn = !voiceOn; store.set("voice", voiceOn ? "1" : "0"); paintMute();
   if (!voiceOn) stopPlayback();
+});
+
+// ------------------------------------------------------ report an issue (item 4)
+// One tap, no form: speed matters more than detail for someone glancing at
+// their phone mid-service. The operator sees type + timestamp + which
+// language the listener was on, which is usually enough to act on.
+const reportSheet = $("report-sheet");
+const reportToast = $("report-toast");
+let reportToastTimer = null;
+
+$("report-btn").addEventListener("click", () => reportSheet.classList.remove("hidden"));
+$("report-cancel").addEventListener("click", () => reportSheet.classList.add("hidden"));
+reportSheet.addEventListener("click", e => {
+  if (e.target === reportSheet) reportSheet.classList.add("hidden");
+});
+reportSheet.querySelectorAll(".report-opt").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const type = btn.dataset.type;
+    reportSheet.classList.add("hidden");
+    try {
+      const qs = new URLSearchParams({ type, lang: lang || "" });
+      await fetch("/api/report?" + qs.toString(), { method: "POST" });
+    } catch { /* best effort - the operator losing one report is not worth
+                 blocking the listener's experience over */ }
+    reportToast.classList.remove("toast-off");
+    clearTimeout(reportToastTimer);
+    reportToastTimer = setTimeout(() => reportToast.classList.add("toast-off"), 2600);
+  });
 });
 
 // ------------------------------------------------------ first-tap gate

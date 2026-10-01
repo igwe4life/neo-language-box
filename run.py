@@ -405,6 +405,7 @@ def cmd_live(args) -> int:
     speech_sink = None
     server_handle = None
     broadcast_sink = None
+    recorder = None
 
     if cfg.server.enabled:
         from sermon.server import Bind, Broadcaster, ServerHandle, list_local_ips
@@ -525,7 +526,16 @@ def cmd_live(args) -> int:
             for code in offered if code in LANGUAGES
         }
 
-        broadcast_sink = BroadcastSink(broadcaster, speakers=audio_speakers)
+        # Recording control is entirely HTTP-driven (the operator dashboard),
+        # so it only needs to exist when the server is up. Files land beside
+        # the models/certs/vocabulary.txt that already sit next to the app.
+        from sermon.config import ROOT
+        from sermon.recorder import Recorder
+        recorder = Recorder(ROOT / "recordings")
+        broadcaster.recorder = recorder
+
+        broadcast_sink = BroadcastSink(broadcaster, speakers=audio_speakers,
+                                       recorder=recorder)
         sinks.append(broadcast_sink)
 
         ips = list_local_ips()
@@ -568,7 +578,7 @@ def cmd_live(args) -> int:
         sinks.append(speech_sink)
 
     pipeline = Pipeline(transcriber, translators, sinks,
-                        sample_rate=cfg.audio.sample_rate)
+                        sample_rate=cfg.audio.sample_rate, recorder=recorder)
 
     try:
         with source:

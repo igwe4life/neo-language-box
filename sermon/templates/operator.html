@@ -72,6 +72,10 @@
     display: flex; align-items: center; justify-content: center; transition: all .15s;
   }
   .icon-btn:hover { background: rgba(255,255,255,0.08); color: var(--fg); border-color: var(--border); }
+  .badge-dot {
+    position: absolute; top: 5px; right: 5px; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--red); box-shadow: 0 0 0 2px var(--panel); animation: pulse-dot 2s infinite;
+  }
 
   /* ============================================================ main grid */
   main {
@@ -176,8 +180,10 @@
   .lang-chip {
     display: flex; align-items: center; gap: 7px; background: var(--blue-dim); color: var(--blue);
     border: 1px solid rgba(59,130,246,0.3); border-radius: 999px; padding: 5px 12px 5px 8px;
-    font-size: 12.5px; font-weight: 700;
+    font-size: 12.5px; font-weight: 700; font-family: inherit; cursor: pointer;
+    transition: all .15s;
   }
+  .lang-chip:hover { background: rgba(59,130,246,0.26); border-color: var(--blue); }
   .lang-chip .code { background: var(--blue); color: #06101f; border-radius: 999px; padding: 1px 7px; font-size: 10.5px; letter-spacing: .3px; }
   .fresh-timer { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
@@ -186,7 +192,8 @@
   .listener-total { text-align: center; margin-bottom: 6px; }
   .listener-total .num { font-size: 40px; font-weight: 800; color: var(--fg); line-height: 1; font-variant-numeric: tabular-nums; }
   .listener-total .lbl { font-size: 11px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-top: 5px; font-weight: 600; }
-  .lang-rows { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; overflow-y: auto; }
+  .lang-rows { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; overflow-y: auto; flex: 1; min-height: 0; }
+  .lang-row.zero { opacity: .45; }
   .lang-row { display: flex; align-items: center; gap: 10px; padding: 7px 2px; font-size: 13.5px; }
   .lang-row .swatch { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
   .lang-row .name { flex: 1; color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -209,6 +216,7 @@
     padding: 14px 26px; background: var(--panel); border-top: 1px solid var(--border-soft);
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
   }
+  .foot-left { display: flex; align-items: center; gap: 14px; }
   .foot-status { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 600; }
   .foot-status .dot { width: 8px; height: 8px; }
   .foot-status.live { color: var(--green); }
@@ -224,12 +232,46 @@
   .foot-btn.danger { background: var(--red-dim); border-color: rgba(239,68,68,0.35); color: #ff9d9d; }
   .foot-btn.danger:hover { background: rgba(239,68,68,0.24); color: #ffd2d2; }
 
+  /* -------- recording (item 6: footer, always visible, state obvious) -------- */
+  .record-btn.foot-btn {
+    background: var(--red-dim); border-color: rgba(239,68,68,0.4); color: #ff9d9d;
+  }
+  .record-btn.foot-btn:hover { background: rgba(239,68,68,0.26); color: #ffd2d2; }
+  .rec-dot-icon { width: 10px; height: 10px; border-radius: 50%; background: currentColor; }
+  .record-active {
+    display: flex; align-items: center; gap: 10px; padding: 8px 14px 8px 12px;
+    border-radius: 999px; background: var(--red-dim); border: 1px solid rgba(239,68,68,0.4);
+    font-size: 13px; font-weight: 700; color: #ffb4b4;
+  }
+  .rec-pulse {
+    width: 10px; height: 10px; border-radius: 50%; background: var(--red);
+    box-shadow: 0 0 8px var(--red); animation: pulse-dot 1.1s infinite;
+  }
+  #record-elapsed { font-variant-numeric: tabular-nums; color: #fff; }
+  .record-langs { color: #ff9d9d; font-weight: 600; max-width: 160px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .rec-icon-btn {
+    width: 26px; height: 26px; border-radius: 50%; border: none; cursor: pointer;
+    background: rgba(255,255,255,0.1); color: #fff; display: flex; align-items: center;
+    justify-content: center; transition: all .15s;
+  }
+  .rec-icon-btn:hover { background: rgba(255,255,255,0.2); }
+  .rec-icon-btn.danger { background: var(--red); }
+  .rec-icon-btn.danger:hover { background: #ff5a5a; }
+  .rec-icon-btn.paused svg { fill: currentColor; stroke: none; }
+
   /* ============================================================ modal */
   .modal-veil {
     position: fixed; inset: 0; background: rgba(4,7,14,0.65); backdrop-filter: blur(2px);
     display: flex; align-items: center; justify-content: center; z-index: 50;
   }
   .modal-veil[hidden] { display: none; }
+  /* .foot-btn and .record-active both declare `display: flex`, which ties
+     the browser's default `[hidden]{display:none}` UA rule on specificity -
+     author CSS wins a tie, so the JS .hidden=true toggle silently did
+     nothing and both the idle "Record" button and the active-recording
+     widget rendered at once. Needs an explicit, more specific override. */
+  .record-btn[hidden], .record-active[hidden] { display: none; }
   .modal {
     background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius);
     width: min(480px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
@@ -254,11 +296,35 @@
   }
   .modal-btn.primary { background: var(--blue); color: white; }
   .modal-btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .modal-btn.rec { background: var(--red); color: white; display: flex; align-items: center; gap: 7px; }
+  .modal-btn[disabled] { opacity: .45; cursor: default; }
+
+  .url-row { display: flex; align-items: stretch; }
+  .url-prefix {
+    display: flex; align-items: center; background: #0d1420; color: var(--muted-dim);
+    border: 1px solid var(--border); border-right: none; border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+    padding: 0 10px; font-size: 13px; white-space: nowrap;
+  }
+  .url-row input { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+  .url-preview { font-size: 12px; color: var(--muted-dim); margin-top: 7px; word-break: break-all; }
+  .modal-hint { font-size: 12.5px; color: var(--muted); line-height: 1.6; margin: 0 0 16px; }
+
+  .check-row {
+    display: flex; align-items: center; gap: 10px; padding: 10px 2px; font-size: 13.5px;
+    font-weight: 600; cursor: pointer; border-bottom: 1px solid var(--border-soft);
+  }
+  .check-row.all-row { font-weight: 700; margin-bottom: 2px; }
+  .check-row input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--blue); cursor: pointer; }
+  .check-list { max-height: 260px; overflow-y: auto; }
+  .check-list .check-row:last-child { border-bottom: none; }
 
   .lang-list-row {
     display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--border-soft);
   }
   .lang-list-row:last-child { border-bottom: none; }
+  .lang-list-row.locked { opacity: .4; }
+  .record-active.is-paused .rec-pulse { animation: none; background: var(--muted-dim); box-shadow: none; }
+  .record-active.is-paused { color: var(--muted); border-color: var(--border); background: rgba(255,255,255,0.03); }
   .lang-badge {
     width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
@@ -299,6 +365,10 @@
   <button class="icon-btn" id="qr-btn" title="Open QR page (project this)">
     <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v3M14 20h3M20 20v.01"/></svg>
   </button>
+  <button class="icon-btn" id="reports-btn" title="Listener reports" style="position:relative">
+    <svg class="icon" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+    <span id="reports-badge" class="badge-dot" hidden></span>
+  </button>
   <button class="icon-btn" id="settings-btn" title="Settings">
     <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
   </button>
@@ -313,14 +383,14 @@
       <h3>Audio Source</h3>
     </div>
     <select id="src-kind">
-      <option value="system">Laptop Audio (System)</option>
+      <option value="system">System Audio</option>
       <option value="mic">Microphone / Line-in</option>
     </select>
     <div class="device-row">
       <select id="src-device"><option value="">Default device</option></select>
     </div>
     <div class="src-error" id="src-error" hidden></div>
-    <div class="src-note" id="src-note">Currently: <b id="state-text">paused</b> &middot; <span id="src-desc">laptop audio</span></div>
+    <div class="src-note" id="src-note">Currently: <b id="state-text">paused</b> &middot; <span id="src-desc">system audio</span></div>
   </div>
 
   <div class="card control-card">
@@ -356,7 +426,10 @@
     </div>
     <div class="sentence-text empty" id="latest">Waiting for audio to be started&hellip;</div>
     <div class="transcript-foot">
-      <span class="lang-chip"><span class="code">EN</span><span>English</span></span>
+      <button class="lang-chip" id="source-lang-btn" title="Change source language">
+        <span class="code" id="source-lang-code">EN</span><span id="source-lang-name">English</span>
+        <svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;margin-left:2px"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
       <span class="fresh-timer" id="fresh-timer">--:--</span>
     </div>
   </div>
@@ -390,11 +463,32 @@
 </main>
 
 <footer>
-  <div class="foot-status idle" id="foot-status">
-    <span class="dot" id="foot-dot"></span>
-    <span id="foot-text">System Offline</span>
+  <div class="foot-left">
+    <div class="foot-status idle" id="foot-status">
+      <span class="dot" id="foot-dot"></span>
+      <span id="foot-text">System Offline</span>
+    </div>
+    <!-- Recording: exactly one of these two is visible at a time. -->
+    <button class="foot-btn record-btn" id="record-start-btn" title="Start recording">
+      <span class="rec-dot-icon"></span> Record
+    </button>
+    <div class="record-active" id="record-active" hidden>
+      <span class="rec-pulse"></span>
+      <span id="record-elapsed">00:00</span>
+      <span class="record-langs" id="record-langs-label"></span>
+      <button class="rec-icon-btn" id="record-pause-btn" title="Pause recording">
+        <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+      </button>
+      <button class="rec-icon-btn danger" id="record-stop-btn" title="Stop recording">
+        <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+      </button>
+    </div>
   </div>
   <div class="foot-actions">
+    <button class="foot-btn" id="recordings-btn">
+      <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+      Recordings
+    </button>
     <button class="foot-btn" id="manage-langs-btn">
       <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M5 8l6 6M4 14l6-6 2-3M2 5h12M7 2h1M22 22l-5-10-5 10M14 18h6"/></svg>
       Manage Languages
@@ -419,8 +513,17 @@
         <label for="in-session">Session name</label>
         <input id="in-session" type="text" maxlength="80" placeholder="e.g. Day 3 - Main Service">
       </div>
+      <div class="field">
+        <label for="in-slug">Listener URL</label>
+        <div class="url-row">
+          <span class="url-prefix" id="url-prefix">/listeners/</span>
+          <input id="in-slug" type="text" maxlength="60" placeholder="auto from event name">
+        </div>
+        <div class="url-preview" id="url-preview">&nbsp;</div>
+      </div>
     </div>
     <div class="modal-foot">
+      <button class="modal-btn ghost" id="copy-url-btn" type="button">Copy link</button>
       <button class="modal-btn ghost" data-close>Cancel</button>
       <button class="modal-btn primary" id="save-session-btn">Save</button>
     </div>
@@ -435,6 +538,71 @@
       <div class="lang-empty">Loading&hellip;</div>
     </div>
     <div class="modal-foot">
+      <button class="modal-btn ghost" data-close>Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== source language modal ===== -->
+<div class="modal-veil" id="source-lang-modal" hidden>
+  <div class="modal">
+    <div class="modal-head"><h2>Source Language</h2><button class="icon-btn" data-close>&times;</button></div>
+    <div class="modal-body">
+      <p class="modal-hint">The language actually being spoken. Everything else is translated
+        from this. Only languages with a speech-recognition model installed can be selected.</p>
+      <div id="source-lang-list"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="modal-btn ghost" data-close>Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== start recording modal ===== -->
+<div class="modal-veil" id="record-start-modal" hidden>
+  <div class="modal">
+    <div class="modal-head"><h2>Start Recording</h2><button class="icon-btn" data-close>&times;</button></div>
+    <div class="modal-body">
+      <p class="modal-hint">Recording runs alongside the live stream and does not interrupt it.
+        Each language is saved as its own audio file.</p>
+      <label class="check-row all-row">
+        <input type="checkbox" id="rec-all-check" checked>
+        <span>All languages</span>
+      </label>
+      <div id="rec-lang-checks" class="check-list"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="modal-btn ghost" data-close>Cancel</button>
+      <button class="modal-btn primary rec" id="rec-start-confirm-btn">
+        <span class="rec-dot-icon"></span> Start Recording
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== recordings history modal ===== -->
+<div class="modal-veil" id="recordings-modal" hidden>
+  <div class="modal">
+    <div class="modal-head"><h2>Recordings</h2><button class="icon-btn" data-close>&times;</button></div>
+    <div class="modal-body" id="recordings-modal-body">
+      <div class="lang-empty">Loading&hellip;</div>
+    </div>
+    <div class="modal-foot">
+      <button class="modal-btn ghost" id="open-recordings-folder-btn" type="button">Open folder</button>
+      <button class="modal-btn ghost" data-close>Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== reports modal ===== -->
+<div class="modal-veil" id="reports-modal" hidden>
+  <div class="modal">
+    <div class="modal-head"><h2>Listener Reports</h2><button class="icon-btn" data-close>&times;</button></div>
+    <div class="modal-body" id="reports-modal-body">
+      <div class="lang-empty">Loading&hellip;</div>
+    </div>
+    <div class="modal-foot">
+      <button class="modal-btn ghost" id="clear-reports-btn" type="button">Clear all</button>
       <button class="modal-btn ghost" data-close>Close</button>
     </div>
   </div>
@@ -573,13 +741,38 @@ for (let i = 0; i < NUM_BLOCKS; i++) {
 }
 const blockEls = [...blocksEl.children];
 
+// Peak-hold: the loudest block briefly lingers after a transient instead of
+// snapping back instantly, the standard broadcast VU-meter behaviour - makes
+// a single sharp word or clap visible even though the 200ms poll would
+// otherwise average it away.
+let peakHoldIndex = 0, peakHoldAt = 0;
+const PEAK_HOLD_MS = 1100;
+
 function paintMeter(peakDb) {
   const pct = Math.max(0, Math.min(1, (peakDb + 60) / 60));
   const lit = Math.round(pct * NUM_BLOCKS);
+
+  const now = performance.now();
+  if (lit >= peakHoldIndex || now - peakHoldAt > PEAK_HOLD_MS) {
+    peakHoldIndex = lit; peakHoldAt = now;
+  }
+  const markerAt = peakHoldIndex - 1;   // index of the held-peak marker block
+
   blockEls.forEach((el, i) => {
-    if (i >= lit) { el.style.background = "#131c2c"; return; }
+    const isMarker = i === markerAt && markerAt >= lit;
+    if (i >= lit && !isMarker) {
+      el.style.background = "#131c2c";
+      el.style.boxShadow = "none";
+      return;
+    }
+    // Continuous green -> amber -> red sweep rather than three flat bands -
+    // low/medium/high are still obvious, but it reads as one living gradient.
     const frac = i / NUM_BLOCKS;
-    el.style.background = frac > 0.88 ? "#ef4444" : frac > 0.68 ? "#f2b53d" : "#22c55e";
+    const hue = Math.max(0, 142 - Math.min(1, frac / 0.85) * 142);
+    const lightness = isMarker ? 78 : (i === lit - 1 ? 62 : 50);
+    el.style.background = `hsl(${hue.toFixed(0)}, 88%, ${lightness}%)`;
+    el.style.boxShadow = (i === lit - 1 && !isMarker)
+      ? `0 0 9px hsl(${hue.toFixed(0)},90%,55%)` : "none";
   });
   $("db-value").textContent = Math.round(peakDb);
 }
@@ -614,33 +807,35 @@ function formatUptime(sec) {
 }
 
 function renderListenerLangs(counts, total) {
-  const rows = Object.entries(counts || {}).filter(([k]) => k !== "")
-    .sort((a, b) => b[1] - a[1]);
-  const pendingCount = counts?.[""] || 0;
-
   const container = $("lang-rows");
-  if (!rows.length && !pendingCount) {
-    container.innerHTML = '<div class="lang-empty">No listeners yet</div>';
+  const codes = Object.keys(languageMeta);
+  if (!codes.length) {
+    container.innerHTML = '<div class="lang-empty">No languages reported yet</div>';
     return;
   }
-  const TOP_N = 5;
-  const top = rows.slice(0, TOP_N);
-  const restSum = rows.slice(TOP_N).reduce((a, [, c]) => a + c, 0) + pendingCount;
+  counts = counts || {};
+  // EVERY offered language, not just the ones in use - a 0-count row still
+  // tells the operator something (nobody picked French today), and is dimmed
+  // rather than hidden. Busiest first, so the list is still scannable at a
+  // glance even with all 14 languages visible; the card scrolls past that.
+  const rows = codes.map(code => [code, counts[code] || 0])
+                    .sort((a, b) => b[1] - a[1]);
+  const pendingCount = counts[""] || 0;
 
-  let html = top.map(([code, count]) => {
+  let html = rows.map(([code, count]) => {
     const meta = languageMeta[code] || {};
     const name = meta.native || code.toUpperCase();
-    return `<div class="lang-row">
+    return `<div class="lang-row${count === 0 ? ' zero' : ''}">
       <span class="swatch" style="background:${colorForLang(code)}"></span>
       <span class="name">${escapeHtml(name)}</span>
       <span class="count">${count}</span>
     </div>`;
   }).join("");
-  if (restSum > 0) {
+  if (pendingCount > 0) {
     html += `<div class="lang-row">
       <span class="swatch" style="background:#56617a"></span>
-      <span class="name">Others</span>
-      <span class="count">${restSum}</span>
+      <span class="name">Choosing&hellip;</span>
+      <span class="count">${pendingCount}</span>
     </div>`;
   }
   container.innerHTML = html;
@@ -660,7 +855,7 @@ async function poll() {
       if (srcDevice.value !== (s.device || "")) srcDevice.value = s.device || "";
     }
     srcKind.disabled = srcDevice.disabled = applyingSource || !s.switchable;
-    srcDesc.textContent = (s.kind === "mic" ? "microphone" : "laptop audio")
+    srcDesc.textContent = (s.kind === "mic" ? "microphone" : "system audio")
       + (s.device ? " (" + deviceLabel(s.kind, s.device) + ")" : "");
     meterTitleSub.textContent = s.kind === "mic" ? "Microphone input" : "System audio";
 
@@ -676,6 +871,9 @@ async function poll() {
     }
     $("s-langs").textContent = s.languages_active ?? "—";
     $("s-uptime").textContent = formatUptime(s.uptime_seconds || 0);
+
+    renderRecordingState(s.recording);
+    $("reports-badge").hidden = !(s.reports_count > 0);
   } catch {}
 }
 setInterval(poll, 200);
@@ -724,18 +922,40 @@ connect();
 $("qr-btn").addEventListener("click", () => window.open("/qr", "_blank"));
 $("preview-btn").addEventListener("click", () => window.open("/", "_blank"));
 
-// -------------------------------------------------------------- settings modal
+// -------------------------------------------------------------- settings modal (incl. item 8: listener URL)
 const settingsModal = $("settings-modal");
+let lanOrigin = "";   // filled from /api/net - the address a PHONE can reach
+
+function slugifyPreview(text) {
+  return (text || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+function updateUrlPreview() {
+  const slug = $("in-slug").value.trim() || slugifyPreview($("in-event").value) || "";
+  const base = lanOrigin || location.origin;
+  $("url-preview").textContent = slug ? `${base}/listeners/${slug}` : `${base}/ (no custom link set)`;
+}
+$("in-slug").addEventListener("input", updateUrlPreview);
+$("in-event").addEventListener("input", () => { if (!$("in-slug").value) updateUrlPreview(); });
+
 $("settings-btn").addEventListener("click", async () => {
   try {
     const s = await (await fetch("/api/status")).json();
     $("in-event").value = s.session?.event || "";
     $("in-session").value = s.session?.session || "";
+    $("in-slug").value = s.listener_slug || "";
   } catch {}
+  try {
+    const net = await (await fetch("/api/net")).json();
+    if (net.lan && net.lan.length) lanOrigin = net.lan[0].url.replace(/\/$/, "");
+  } catch {}
+  updateUrlPreview();
   settingsModal.hidden = false;
 });
 $("save-session-btn").addEventListener("click", async () => {
-  const qs = new URLSearchParams({ event: $("in-event").value, session: $("in-session").value });
+  const qs = new URLSearchParams({
+    event: $("in-event").value, session: $("in-session").value,
+    slug: $("in-slug").value,
+  });
   try {
     const r = await fetch("/api/session?" + qs.toString(), { method: "POST" });
     const j = await r.json();
@@ -748,6 +968,16 @@ $("save-session-btn").addEventListener("click", async () => {
     return;
   }
   settingsModal.hidden = true;
+});
+$("copy-url-btn").addEventListener("click", async () => {
+  const text = $("url-preview").textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    const btn = $("copy-url-btn");
+    const prev = btn.textContent;
+    btn.textContent = "Copied!";
+    setTimeout(() => { btn.textContent = prev; }, 1400);
+  } catch { alert(text); }   // clipboard API unavailable - at least show it
 });
 
 // -------------------------------------------------------------- manage languages modal
@@ -782,6 +1012,210 @@ $("manage-langs-btn").addEventListener("click", async () => {
   }).join("");
 });
 
+// -------------------------------------------------------------- source language (item 3)
+// Real plumbing, honestly scoped: today only English has a bundled
+// speech-recognition model, so it is the only selectable entry. The rest of
+// the registry is shown locked rather than hidden, so the control is visibly
+// ready for when a second model is added instead of silently absent.
+const sourceLangModal = $("source-lang-modal");
+$("source-lang-btn").addEventListener("click", async () => {
+  sourceLangModal.hidden = false;
+  const body = $("source-lang-list");
+  body.innerHTML = '<div class="lang-empty">Loading&hellip;</div>';
+  let data;
+  try {
+    data = await (await fetch("/api/source-language")).json();
+  } catch {
+    body.innerHTML = '<div class="lang-empty">Could not load languages.</div>';
+    return;
+  }
+  const codes = Object.keys(data.languages || {});
+  body.innerHTML = codes.map(code => {
+    const m = data.languages[code] || {};
+    const avail = (data.available || []).includes(code);
+    const current = code === data.current;
+    const c = colorForLang(code) || "#56617a";
+    return `<div class="lang-list-row${avail ? '' : ' locked'}" data-lang="${code}"
+               style="${avail ? 'cursor:pointer' : ''}">
+      <span class="lang-badge" style="background:${c}22; color:${c}; border:1px solid ${c}55">${escapeHtml(code.toUpperCase())}</span>
+      <div class="info">
+        <div class="native">${escapeHtml(m.native || code.toUpperCase())}</div>
+        <div class="code">${avail ? (current ? "current source" : "available") : "needs a speech model"}</div>
+      </div>
+      ${current ? '<span class="mini-badge voice">Active</span>'
+                : (avail ? "" : '<span class="mini-badge">Locked</span>')}
+    </div>`;
+  }).join("");
+  body.querySelectorAll(".lang-list-row[data-lang]").forEach(row => {
+    if (row.classList.contains("locked")) return;
+    row.addEventListener("click", async () => {
+      const lang = row.dataset.lang;
+      try {
+        const r = await fetch("/api/source-language?lang=" + encodeURIComponent(lang), { method: "POST" });
+        const j = await r.json();
+        if (!j.ok) { alert(j.error || "Could not change the source language"); return; }
+        $("source-lang-code").textContent = lang.toUpperCase();
+        $("source-lang-name").textContent = (data.languages[lang] || {}).native || lang.toUpperCase();
+        sourceLangModal.hidden = true;
+      } catch (err) { alert("Request failed: " + err); }
+    });
+  });
+});
+
+// -------------------------------------------------------------- recording (item 6 - PRIORITY)
+function renderRecordingState(rec) {
+  rec = rec || { active: false };
+  const startBtn = $("record-start-btn");
+  const activeBox = $("record-active");
+  if (!rec.active) {
+    startBtn.hidden = false;
+    activeBox.hidden = true;
+    return;
+  }
+  startBtn.hidden = true;
+  activeBox.hidden = false;
+  const sec = Math.floor(rec.elapsed_seconds || 0);
+  const m = Math.floor(sec / 60), s = sec % 60;
+  $("record-elapsed").textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  const n = (rec.languages || []).length;
+  $("record-langs-label").textContent = n + (n === 1 ? " language" : " languages");
+  activeBox.classList.toggle("is-paused", !!rec.paused);
+  const pauseBtn = $("record-pause-btn");
+  pauseBtn.title = rec.paused ? "Resume recording" : "Pause recording";
+  pauseBtn.innerHTML = rec.paused
+    ? '<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px"><polygon points="6,4 20,12 6,20"/></svg>'
+    : '<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+}
+
+const recordStartModal = $("record-start-modal");
+$("record-start-btn").addEventListener("click", () => {
+  const checksBox = $("rec-lang-checks");
+  const codes = Object.keys(languageMeta);
+  checksBox.innerHTML = codes.map(code => {
+    const m = languageMeta[code] || {};
+    return `<label class="check-row"><input type="checkbox" class="rec-lang-check"
+              value="${code}" checked disabled><span>${escapeHtml(m.native || code.toUpperCase())}</span></label>`;
+  }).join("");
+  $("rec-all-check").checked = true;
+  recordStartModal.hidden = false;
+});
+$("rec-all-check").addEventListener("change", e => {
+  const on = e.target.checked;
+  document.querySelectorAll(".rec-lang-check").forEach(cb => {
+    cb.disabled = on;
+    if (on) cb.checked = true;
+  });
+});
+$("rec-start-confirm-btn").addEventListener("click", async () => {
+  const all = $("rec-all-check").checked;
+  let langs;
+  if (all) {
+    langs = "all";
+  } else {
+    const picked = [...document.querySelectorAll(".rec-lang-check:checked")].map(cb => cb.value);
+    if (!picked.length) { alert("Pick at least one language."); return; }
+    langs = picked.join(",");
+  }
+  try {
+    const r = await fetch("/api/recording/start?languages=" + encodeURIComponent(langs), { method: "POST" });
+    const j = await r.json();
+    if (!j.ok) { alert(j.error || "Could not start recording"); return; }
+    recordStartModal.hidden = true;
+    poll();   // reflect the new state now rather than waiting out the 200ms poll
+  } catch (err) { alert("Request failed: " + err); }
+});
+$("record-pause-btn").addEventListener("click", async () => {
+  const resuming = $("record-active").classList.contains("is-paused");
+  try { await fetch("/api/recording/" + (resuming ? "resume" : "pause"), { method: "POST" }); } catch {}
+  poll();
+});
+$("record-stop-btn").addEventListener("click", async () => {
+  if (!confirm("Stop recording? Files saved so far stay in the recordings folder.")) return;
+  try { await fetch("/api/recording/stop", { method: "POST" }); } catch {}
+  poll();
+});
+
+// -------------------------------------------------------------- recordings history
+const recordingsModal = $("recordings-modal");
+function fmtBytes(n) {
+  if (n > 1e6) return (n / 1e6).toFixed(1) + " MB";
+  if (n > 1e3) return (n / 1e3).toFixed(0) + " KB";
+  return (n || 0) + " B";
+}
+function fmtDur(sec) {
+  sec = Math.round(sec || 0);
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+$("recordings-btn").addEventListener("click", async () => {
+  recordingsModal.hidden = false;
+  const body = $("recordings-modal-body");
+  body.innerHTML = '<div class="lang-empty">Loading&hellip;</div>';
+  try {
+    const data = await (await fetch("/api/recording/sessions")).json();
+    const sessions = data.sessions || [];
+    if (!sessions.length) {
+      body.innerHTML = '<div class="lang-empty">No recordings yet.</div>';
+      return;
+    }
+    body.innerHTML = sessions.map(sess => {
+      if (sess.incomplete) {
+        return `<div class="lang-list-row"><div class="info">
+          <div class="native">${escapeHtml(sess.folder)}</div>
+          <div class="code">interrupted - files may still be usable</div>
+        </div></div>`;
+      }
+      const files = (sess.files || []).map(f =>
+        `${escapeHtml(f.label)} ${fmtDur(f.duration_seconds)} (${fmtBytes(f.size_bytes)})`).join(" &middot; ");
+      return `<div class="lang-list-row"><div class="info">
+        <div class="native">${escapeHtml(sess.event || sess.folder)}</div>
+        <div class="code">${escapeHtml(sess.started_at || "")} &middot; ${fmtDur(sess.duration_seconds)}
+          &middot; ${files || "no audio captured"}</div>
+      </div></div>`;
+    }).join("");
+  } catch {
+    body.innerHTML = '<div class="lang-empty">Could not load recordings.</div>';
+  }
+});
+$("open-recordings-folder-btn").addEventListener("click", async () => {
+  try {
+    const j = await (await fetch("/api/recording/open-folder", { method: "POST" })).json();
+    if (!j.ok) alert(j.error || "Could not open the folder.");
+  } catch (err) { alert("Request failed: " + err); }
+});
+
+// -------------------------------------------------------------- reports (item 4)
+const reportsModal = $("reports-modal");
+const REPORT_TYPE_LABEL = { translation: "Wrong translation", audio: "Audio problem",
+                            technical: "Technical issue", other: "Other issue" };
+$("reports-btn").addEventListener("click", async () => {
+  reportsModal.hidden = false;
+  const body = $("reports-modal-body");
+  body.innerHTML = '<div class="lang-empty">Loading&hellip;</div>';
+  try {
+    const data = await (await fetch("/api/reports")).json();
+    const reports = data.reports || [];
+    if (!reports.length) {
+      body.innerHTML = '<div class="lang-empty">No reports from listeners.</div>';
+      return;
+    }
+    body.innerHTML = reports.slice().reverse().map(r => {
+      const langName = r.lang ? (languageMeta[r.lang] || {}).native || r.lang.toUpperCase() : "";
+      return `<div class="lang-list-row"><div class="info">
+        <div class="native">${escapeHtml(REPORT_TYPE_LABEL[r.type] || r.type)}${langName ? " &middot; " + escapeHtml(langName) : ""}</div>
+        <div class="code">${escapeHtml(r.time)}${r.note ? " — " + escapeHtml(r.note) : ""}</div>
+      </div></div>`;
+    }).join("");
+  } catch {
+    body.innerHTML = '<div class="lang-empty">Could not load reports.</div>';
+  }
+});
+$("clear-reports-btn").addEventListener("click", async () => {
+  if (!confirm("Clear all reports?")) return;
+  try { await fetch("/api/reports/clear", { method: "POST" }); } catch {}
+  $("reports-btn").click();
+});
+
 // -------------------------------------------------------------- end session
 $("end-session-btn").addEventListener("click", async () => {
   if (!confirm("End the session? This stops audio capture for all listeners.")) return;
@@ -793,11 +1227,12 @@ $("end-session-btn").addEventListener("click", async () => {
 });
 
 // -------------------------------------------------------------- modal plumbing
+const ALL_MODALS = [settingsModal, langsModal, sourceLangModal, recordStartModal,
+                    recordingsModal, reportsModal];
 document.querySelectorAll("[data-close]").forEach(el => el.addEventListener("click", () => {
-  settingsModal.hidden = true;
-  langsModal.hidden = true;
+  ALL_MODALS.forEach(m => { m.hidden = true; });
 }));
-[settingsModal, langsModal].forEach(veil => veil.addEventListener("click", e => {
+ALL_MODALS.forEach(veil => veil.addEventListener("click", e => {
   if (e.target === veil) veil.hidden = true;
 }));
 </script>

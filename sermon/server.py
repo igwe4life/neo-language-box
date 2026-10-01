@@ -33,12 +33,15 @@ import threading
 import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.datastructures import Headers
 from websockets.http11 import Response
+
+from .config import LANGUAGES, ROOT, SOURCE_LANG
 
 _LOGGER = logging.getLogger("sermon.server")
 LISTENER_HTML = Path(__file__).parent / "templates" / "listen.html"
@@ -92,7 +95,25 @@ class Broadcaster:
         # Operator-editable session labels, shown on the dashboard. Purely
         # descriptive - never sent to a client, never affects the pipeline.
         self.session_meta: dict = {"event": "", "session": ""}
+        # Vanity slug for /listeners/<slug> - e.g. "hslhs-2026". Empty means no
+        # custom slug has been set; /listeners/<anything> still works (see the
+        # route), this only controls what the dashboard suggests for sharing.
+        self.listener_slug: str = ""
+        # The language actually being spoken/transcribed. Only "en" has a
+        # bundled speech-recognition model today (see /api/source-language),
+        # so this exists mainly as the real, honest plumbing for when a
+        # second model is added - not a feature that silently does nothing.
+        self.source_lang: str = SOURCE_LANG
         self.started_at = time.monotonic()
+        # Set by run.py when recording support is wired in. Optional: a
+        # Broadcaster built without one (e.g. in a future test) just has no
+        # recording routes respond usefully.
+        self.recorder = None
+        # In-memory listener-reported issues (translation wrong, no audio,
+        # etc.) - also append-only logged to disk, see /api/report, so a
+        # restart does not lose them.
+        self.reports: list = []
+        self._report_counter = 0
         self._lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self.total_delivered = 0
@@ -246,7 +267,12 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
         path = request.path.split("?", 1)[0]
         if path in ("/ws", "/mic"):
             return None
-        if path in ("/", "/index.html", "/listen"):
+        # /listeners/<anything> is the shareable vanity URL (item 8): it always
+        # serves the same listener page as "/", regardless of what the slug
+        # is or whether one has even been configured. The slug is cosmetic -
+        # there is no auth anywhere in this app - so a stale or mistyped slug
+        # must never turn into a broken link for an arriving listener.
+        if path in ("/", "/index.html", "/listen") or path.startswith("/listeners/"):
             body = _read(LISTENER_HTML)
             return Response(200, "OK", Headers([
                 ("Content-Type", "text/html; charset=utf-8"),
@@ -267,7 +293,13 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
                 ("Content-Length", str(len(body))),
                 ("Cache-Control", "no-store"),
             ]), body)
-        if path.startswith("/api/") and path != "/api/session" and request.method == "POST":
+        # Only these three legacy actions go through the generic handler below.
+        # It used to be "any /api/* POST", which silently swallowed /api/session
+        # with a {"ok": false, "error": "unknown action"} response - every new
+        # route added after it needed its own exclusion, a bug waiting to
+        # repeat. An allowlist means a new route below just works.
+        if (path.startswith("/api/") and request.method == "POST"
+                and path[len("/api/"):] in ("start", "stop", "source")):
             action = path[len("/api/"):]
             src = mic_source
             resp: dict = {"ok": False, "error": "no audio source is running"}
@@ -325,6 +357,10 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
                 "languages_active": len(broadcaster.languages),
                 "uptime_seconds": round(broadcaster.uptime_seconds, 1),
                 "session": broadcaster.session_meta,
+                "listener_slug": broadcaster.listener_slug,
+                "recording": (broadcaster.recorder.status()
+                             if broadcaster.recorder else {"active": False}),
+                "reports_count": len(broadcaster.reports),
                 "level_db": getattr(src, "last_db", -120.0) if src else -120.0,
                 "peak_db": getattr(src, "peak_hold_db", -120.0) if src else -120.0,
                 "in_speech": getattr(src, "in_speech", False) if src else False,
@@ -343,12 +379,24 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
             # used anywhere in the pipeline, so no validation beyond a length
             # cap to keep a stray paste from blowing up the display.
             from urllib.parse import parse_qs, urlparse
-            q = parse_qs(urlparse(request.path).query)
+            # keep_blank_values: a cleared field submits "event=" etc., and
+            # without this flag parse_qs drops blank params entirely - the
+            # "if ... in q" checks below would then never see them, so
+            # clearing a field in Settings would silently do nothing.
+            q = parse_qs(urlparse(request.path).query, keep_blank_values=True)
             if "event" in q:
                 broadcaster.session_meta["event"] = q["event"][0][:80]
             if "session" in q:
                 broadcaster.session_meta["session"] = q["session"][0][:80]
-            body = json.dumps({"ok": True, "session": broadcaster.session_meta}).encode("utf-8")
+            if "slug" in q:
+                from sermon.recorder import slugify
+                raw = q["slug"][0].strip()
+                # Blank clears the custom slug (falls back to "/" in the QR
+                # page); anything else is slugified so a pasted "HSLHS 2026!"
+                # cannot produce a URL with spaces or punctuation in it.
+                broadcaster.listener_slug = slugify(raw, fallback="") if raw else ""
+            body = json.dumps({"ok": True, "session": broadcaster.session_meta,
+                               "listener_slug": broadcaster.listener_slug}).encode("utf-8")
             return Response(200, "OK", Headers([
                 ("Content-Type", "application/json"),
                 ("Content-Length", str(len(body))),
@@ -398,6 +446,150 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
                 ("Content-Length", str(len(body))),
                 ("Cache-Control", "no-store"),
             ]), body)
+        if path == "/api/source-language" and request.method != "POST":
+            # Real endpoint, honestly scoped: ONLY English has a bundled
+            # speech-recognition model today, so it is the only entry in
+            # "available". The full registry is still returned so the
+            # dashboard can show every language with a lock icon on the rest,
+            # rather than pretending a switch exists only to do nothing.
+            available = [SOURCE_LANG]
+            body = json.dumps({
+                "current": broadcaster.source_lang,
+                "available": available,
+                "languages": {c: m for c, m in LANGUAGES.items()},
+            }, ensure_ascii=False).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
+                ("Cache-Control", "no-store"),
+            ]), body)
+        if path == "/api/source-language" and request.method == "POST":
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(request.path).query)
+            lang = (q.get("lang") or [""])[0]
+            if lang == broadcaster.source_lang:
+                resp = {"ok": True, "current": lang}
+            elif lang == SOURCE_LANG:
+                broadcaster.source_lang = lang
+                resp = {"ok": True, "current": lang}
+            else:
+                name = (LANGUAGES.get(lang) or {}).get("native", lang or "that language")
+                resp = {"ok": False,
+                       "error": f"{name} needs its own speech-recognition model, "
+                                 "which is not installed yet. Only English is "
+                                 "supported as the spoken/source language right now."}
+            body = json.dumps(resp, ensure_ascii=False).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
+            ]), body)
+        if path.startswith("/api/recording/") and request.method == "POST":
+            action = path[len("/api/recording/"):]
+            recorder = broadcaster.recorder
+            if recorder is None:
+                resp = {"ok": False, "error": "recording is not available"}
+            elif action == "start":
+                from urllib.parse import parse_qs, urlparse
+                q = parse_qs(urlparse(request.path).query)
+                raw = (q.get("languages") or [""])[0].strip()
+                if not raw or raw == "all":
+                    wanted = set(broadcaster.languages)
+                else:
+                    wanted = {c.strip() for c in raw.split(",") if c.strip()}
+                    wanted &= set(broadcaster.languages)   # ignore unknown codes
+                try:
+                    info = recorder.start(wanted, broadcaster.language_meta,
+                                          event_label=broadcaster.session_meta.get("event", ""))
+                    resp = {"ok": True, **info}
+                except Exception as exc:
+                    resp = {"ok": False, "error": str(exc)}
+            elif action == "pause":
+                recorder.pause(); resp = {"ok": True}
+            elif action == "resume":
+                recorder.resume(); resp = {"ok": True}
+            elif action == "stop":
+                resp = recorder.stop()
+            elif action == "open-folder":
+                # Loopback-only: this opens a window on the machine the server
+                # runs on, so it must never be reachable from a phone on the LAN.
+                try:
+                    host_hdr = request.headers.get("Host", "")
+                except Exception:
+                    host_hdr = ""
+                if not (host_hdr.startswith("127.") or host_hdr.startswith("localhost")):
+                    resp = {"ok": False, "error": "only available from the operator window"}
+                else:
+                    try:
+                        import os
+                        recorder.base_dir.mkdir(parents=True, exist_ok=True)
+                        os.startfile(recorder.base_dir)  # noqa: S606 - fixed, server-owned path
+                        resp = {"ok": True}
+                    except Exception as exc:
+                        resp = {"ok": False, "error": str(exc)}
+            else:
+                resp = {"ok": False, "error": f"unknown action {action!r}"}
+            body = json.dumps(resp, ensure_ascii=False).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
+            ]), body)
+        if path == "/api/recording/sessions":
+            recorder = broadcaster.recorder
+            sessions = recorder.list_sessions() if recorder else []
+            body = json.dumps({"sessions": sessions}, ensure_ascii=False).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
+                ("Cache-Control", "no-store"),
+            ]), body)
+        if path == "/api/report" and request.method == "POST":
+            # From the LISTENER page - untrusted input, so every field is
+            # capped and only known-shape data is kept. Appended both to the
+            # in-memory list the dashboard polls and to a log file, so a
+            # report survives an app restart even if nobody saw it live.
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(request.path).query)
+            kind = (q.get("type") or ["other"])[0][:32]
+            note = (q.get("note") or [""])[0][:500]
+            lang = (q.get("lang") or [""])[0][:8]
+            broadcaster._report_counter += 1
+            report = {
+                "id": broadcaster._report_counter,
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "type": kind,
+                "note": note,
+                "lang": lang,
+            }
+            broadcaster.reports.append(report)
+            # Unbounded growth over a multi-hour service is unlikely (this is
+            # per-listener-initiated, not automatic), but cap it anyway so a
+            # misbehaving client spamming the endpoint cannot grow this forever.
+            del broadcaster.reports[:-200]
+            try:
+                with open(ROOT / "reports.log", "a", encoding="utf-8") as f:
+                    f.write(json.dumps({**report, "date": datetime.now().isoformat(timespec="seconds")},
+                                       ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+            body = json.dumps({"ok": True}).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
+            ]), body)
+        if path == "/api/reports":
+            body = json.dumps({"reports": broadcaster.reports}, ensure_ascii=False).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
+                ("Cache-Control", "no-store"),
+            ]), body)
+        if path == "/api/reports/clear" and request.method == "POST":
+            broadcaster.reports.clear()
+            body = json.dumps({"ok": True}).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
+            ]), body)
         if path == "/qr":
             # Rendered on-the-fly with the ORIGIN the client used to reach us,
             # so if the operator opens it from LAN their phones scan the LAN
@@ -428,6 +620,10 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
                     listener_url = f"https://{ips[0]}:{port_str or '8443'}/"
             if not listener_url:
                 listener_url = "https://<no-lan-ip>/"
+            # The vanity path, when the operator has set one - purely cosmetic,
+            # "/listeners/<anything>" already works regardless (see above).
+            if broadcaster.listener_slug:
+                listener_url = f"{listener_url.rstrip('/')}/listeners/{broadcaster.listener_slug}"
             page = _read(QR_HTML).decode("utf-8")
             page = page.replace("{{URL}}", listener_url)
             page = page.replace("{{QR_SVG}}", _qr_svg(listener_url))
