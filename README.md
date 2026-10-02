@@ -17,7 +17,7 @@ Once installed the machine can stay offline.
 | Segmentation | energy VAD in numpy + Silero VAD | ~0 % CPU for the first pass; Silero stops silence becoming invented sentences |
 | STT | NVIDIA Parakeet TDT 0.6B, int8 (sherpa-onnx) | ~8x faster than Whisper `base.en` on the same clip |
 | MT | OPUS-MT (14 languages) + NLLB-200 1.3B (10 languages), CTranslate2 int8 | one engine each where it wins; NLLB decodes its ten in one batch |
-| TTS | Piper (18 languages), Meta MMS (5), VITS-OpenBible-Igbo (1), all ONNX | no source covers all of them; one onnxruntime for all four |
+| TTS | Piper (17 languages), Meta MMS (5), VITS-OpenBible-Igbo (1), all ONNX | no source covers all of them; one onnxruntime for all four |
 | Streaming | `websockets` server + one HTML page | pure Python, no CDN |
 | Output | console + speech + broadcast sinks | one per phase, `pipeline.py` unchanged |
 

@@ -4,17 +4,19 @@ Neo Sermon uses **no LLMs**. Nothing like GPT or Claude is involved, and nothing
 leaves the machine. Every stage is a small single-purpose model running locally
 on CPU.
 
-43 models ship in the installer: 4 for recognition (3 engines plus the voice
+42 models ship in the installer: 4 for recognition (3 engines plus the voice
 activity detector), 15 for translation (NLLB-200 now covers ten of the
-languages off one shared model), and 24 voices. 25 languages are offered;
-English, the source language, needs neither a translator nor a voice.
+languages off one shared model), and 23 voices. 25 languages are offered;
+English, the source language, needs neither a translator nor a voice, and
+Japanese has no voice at all (see the TTS section below) - every other
+language gets one.
 
 **RAM note for the full 24-target configuration.** Every target the operator
 enables loads its own translator and, if available, its own voice into RAM at
 once - narrowing with `SERMON_TARGETS=fr,es,ig` (see MTConfig in
 `sermon/config.py`) controls this. All 24 together need roughly 5 GB: the
 shared NLLB-200 model is ~1.4 GB, the 14 OPUS-MT models are ~100-250 MB each,
-Parakeet is a few hundred MB, and the 18 Piper + 6 MMS/Coqui voices are
+Parakeet is a few hundred MB, and the 17 Piper + 6 MMS/Coqui voices are
 ~60-130 MB each. On an 8 GB machine that is close enough to the ceiling that
 other running programs (a browser, an editor) can push a late model over it;
 tested on an 8 GB/4-thread laptop already busy with other software, several
@@ -80,7 +82,7 @@ No single source covers these languages, so four are used.
 
 | Engine | On disk | Languages |
 |---|---|---|
-| **Piper** (VITS, ONNX) | `tts/<xx_XX-voice-medium>/` | French, Spanish, Portuguese, German, Italian, Russian, Arabic, Hindi, Chinese, Swahili, Korean, Japanese, Vietnamese, Indonesian, Turkish, Polish, Bengali, Urdu |
+| **Piper** (VITS, ONNX) | `tts/<xx_XX-voice-medium>/` | French, Spanish, Portuguese, German, Italian, Russian, Arabic, Hindi, Chinese, Swahili, Korean, Vietnamese, Indonesian, Turkish, Polish, Bengali, Urdu |
 | **Meta MMS-TTS**, pre-converted ONNX (VITS) | `tts/yo/`, `tts/ha/`, `tts/tl/`, `tts/so/` | Yoruba, Hausa, Tagalog, Somali |
 | **Meta MMS-TTS**, converted here (VITS) | `tts/am/` | Amharic |
 | **VITS-OpenBible-Igbo** (Coqui VITS, converted to ONNX) | `tts/ig/` | Igbo |
@@ -103,6 +105,14 @@ the `uroman` package first - see the `romanize.flag` file the export script
 writes, which is what tells it to. This voice has not been checked by a native
 Amharic speaker the way Igbo's was; it is verified only to produce
 non-silent, duration-proportional audio rather than silence or noise.
+
+There is also no Japanese voice, but not by design: Piper's only Japanese
+voice (`ja_JP-hi_fi_captain-medium`) needs the `pyopenjtalk` package for
+phonemisation, and `pyopenjtalk` ships no prebuilt wheel for any platform -
+installing it means compiling a C++ library with cmake on every machine that
+runs this, which does not fit an unsigned, no-admin-elevation installer.
+Japanese listeners get the transcript as text, like English, until that
+changes.
 
 There is deliberately **no English voice** — the room already hears the speaker,
 so English listeners get the transcript as text. If a server voice fails, the
