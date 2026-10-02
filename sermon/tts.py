@@ -166,17 +166,18 @@ class VitsSpeaker(Speaker):
             out = self.session.run(["output"], {
                 "input": x,
                 "input_lengths": np.array([x.shape[1]], dtype=np.int64),
-                "scales": np.array([0.667, self.cfg.length_scale, 0.8],
-                                   dtype=np.float32),
+                "scales": np.array(
+                    [self.cfg.noise_scale, self.cfg.length_scale, self.cfg.noise_scale_w],
+                    dtype=np.float32),
             })[0]
         else:
             out = self.session.run(["y"], {
                 "x": x,
                 "x_length": np.array([x.shape[1]], dtype=np.int64),
-                "noise_scale": np.array([0.667], dtype=np.float32),
+                "noise_scale": np.array([self.cfg.noise_scale], dtype=np.float32),
                 "length_scale": np.array([self.cfg.length_scale],
                                          dtype=np.float32),
-                "noise_scale_w": np.array([0.8], dtype=np.float32),
+                "noise_scale_w": np.array([self.cfg.noise_scale_w], dtype=np.float32),
             })[0]
 
         audio = np.asarray(out, dtype=np.float32).squeeze()

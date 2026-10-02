@@ -266,6 +266,22 @@ class TTSConfig:
     # where it does misbehave.
     voices: dict[str, str] = field(default_factory=lambda: _voices_from_env())
     length_scale: float = 1.0         # >1 slower delivery
+    # Per-language override of length_scale. Piper and the raw VITS voices
+    # (Igbo, Yoruba, Hausa) are different model families with different
+    # inherent pacing at the same length_scale - a listener flagged Yoruba
+    # and Igbo specifically as rushed, not the Piper voices, so this slows
+    # down only those two rather than every language.
+    length_scale_overrides: dict[str, float] = field(default_factory=lambda: {
+        "yo": 1.2,
+        "ig": 1.2,
+    })
+    # noise_scale/noise_scale_w control a VITS voice's prosodic variation -
+    # higher generally reads as more natural/expressive, lower as flatter or
+    # more "robotic". Only the raw VITS voices (VitsSpeaker) read these;
+    # Piper manages its own internally. 0.667/0.8 are the values this
+    # project has always used (previously hardcoded in tts.py).
+    noise_scale: float = 0.667
+    noise_scale_w: float = 0.8
     volume: float = 1.0
     output_device: int | None = None
     queue_size: int = 2               # pending phrases; oldest dropped when full
@@ -279,6 +295,9 @@ class TTSConfig:
     def voice(self) -> str:
         """Primary voice (drives --speak). Reads from the primary target."""
         return next(iter(self.voices.values()))
+
+    def length_scale_for(self, code: str) -> float:
+        return self.length_scale_overrides.get(code, self.length_scale)
 
 
 @dataclass

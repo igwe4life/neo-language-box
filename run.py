@@ -481,10 +481,13 @@ def cmd_live(args) -> int:
                 slot: dict = {}
                 results[t] = slot
                 make = VitsSpeaker if t in VITS_VOICES else PiperSpeaker
+                # Per-language length_scale (see TTSConfig.length_scale_overrides) -
+                # Yoruba and Igbo read as rushed at the same pace Piper voices use.
+                voice_cfg = replace(cfg.tts, length_scale=cfg.tts.length_scale_for(t))
 
-                def _worker(mp=model_path, slot=slot, make=make):
+                def _worker(mp=model_path, slot=slot, make=make, voice_cfg=voice_cfg):
                     try:
-                        slot["speaker"] = make(mp, cfg.tts)
+                        slot["speaker"] = make(mp, voice_cfg)
                     except Exception as exc:
                         slot["error"] = exc
 
