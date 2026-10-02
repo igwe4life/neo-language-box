@@ -1,6 +1,6 @@
 # Neo Sermon
 
-Live interpretation into 24 languages, running entirely on one laptop.
+Live interpretation into 13 languages, running entirely on one laptop.
 
 * The operator opens the desktop app, picks an audio source (the laptop's own
   audio, a microphone, or line-in from a mixer) and presses Start.
@@ -16,8 +16,8 @@ Once installed the machine can stay offline.
 | Capture | PyAudioWPatch (WASAPI loopback) or `sounddevice`, resampled to 16 kHz mono | captures system audio, a mic, or line-in; switchable while running |
 | Segmentation | energy VAD in numpy + Silero VAD | ~0 % CPU for the first pass; Silero stops silence becoming invented sentences |
 | STT | NVIDIA Parakeet TDT 0.6B, int8 (sherpa-onnx) | ~8x faster than Whisper `base.en` on the same clip |
-| MT | OPUS-MT (14 languages) + NLLB-200 1.3B (10 languages), CTranslate2 int8 | one engine each where it wins; NLLB decodes its ten in one batch |
-| TTS | Piper (17 languages), Meta MMS (5), VITS-OpenBible-Igbo (1), all ONNX | no source covers all of them; one onnxruntime for all four |
+| MT | OPUS-MT (9 languages) + NLLB-200 1.3B (4 African languages), CTranslate2 int8 | one engine each where it wins; NLLB decodes its four in one batch |
+| TTS | Piper (10 languages), Meta MMS (2), VITS-OpenBible-Igbo (1), all ONNX | no source covers all of them; one onnxruntime for all three |
 | Streaming | `websockets` server + one HTML page | pure Python, no CDN |
 | Output | console + speech + broadcast sinks | one per phase, `pipeline.py` unchanged |
 

@@ -163,49 +163,26 @@ LANGUAGES = {
     "ig": {"native": "Igbo",     "flag": "\U0001F1F3\U0001F1EC", "speech": "ig-NG"},
     "yo": {"native": "Yorùbá",   "flag": "\U0001F1F3\U0001F1EC", "speech": "yo-NG"},
     "ha": {"native": "Hausa",    "flag": "\U0001F1F3\U0001F1EC", "speech": "ha-NG"},
-
-    # --- third language wave: 25 languages total ------------------------
-    "ko": {"native": "한국어",      "flag": "\U0001F1F0\U0001F1F7", "speech": "ko-KR"},
-    "ja": {"native": "日本語",      "flag": "\U0001F1EF\U0001F1F5", "speech": "ja-JP"},
-    "vi": {"native": "Tiếng Việt", "flag": "\U0001F1FB\U0001F1F3", "speech": "vi-VN"},
-    "tl": {"native": "Tagalog",   "flag": "\U0001F1F5\U0001F1ED", "speech": "fil-PH"},
-    "id": {"native": "Bahasa Indonesia", "flag": "\U0001F1EE\U0001F1E9", "speech": "id-ID"},
-    "tr": {"native": "Türkçe",    "flag": "\U0001F1F9\U0001F1F7", "speech": "tr-TR"},
-    "pl": {"native": "Polski",    "flag": "\U0001F1F5\U0001F1F1", "speech": "pl-PL"},
-    "am": {"native": "አማርኛ",      "flag": "\U0001F1EA\U0001F1F9", "speech": "am-ET"},
-    "so": {"native": "Soomaali",  "flag": "\U0001F1F8\U0001F1F4", "speech": "so-SO"},
-    "bn": {"native": "বাংলা",      "flag": "\U0001F1E7\U0001F1E9", "speech": "bn-BD"},
-    "ur": {"native": "اردو",       "flag": "\U0001F1F5\U0001F1F0", "speech": "ur-PK", "rtl": True},
 }
 
 DEFAULT_TARGETS = ["fr", "es", "pt", "de", "it", "ru", "ar", "hi", "zh",
-                   "sw", "ig", "yo", "ha",
-                   "ko", "ja", "vi", "tl", "id", "tr", "pl", "am", "so",
-                   "bn", "ur"]
+                   "sw", "ig", "yo", "ha"]
 
 # Targets served by NLLB-200 rather than a bilingual OPUS-MT model, mapped to
-# NLLB's own language tags. OPUS-MT does publish models for all of these, but
-# they are low-resource pairs (or, for Korean/Urdu, pairs whose only OPUS-MT
-# release scored low on its own model card) and NLLB does better.
-# Everything NOT listed here stays on OPUS-MT, which is better for those
-# languages and about 13x faster.
+# NLLB's own language tags. OPUS-MT does publish models for all four, but they
+# are low-resource pairs and a native speaker judged them clearly worse than
+# NLLB in a blind comparison. Everything NOT listed here stays on OPUS-MT,
+# which is better for those languages and about 13x faster.
 NLLB_TARGETS = {
     "ig": "ibo_Latn",
     "yo": "yor_Latn",
     "ha": "hau_Latn",
     "sw": "swh_Latn",
-    "pl": "pol_Latn",   # no official direct or tc-big OPUS-MT en->pl release
-    "am": "amh_Ethi",   # no direct OPUS-MT; only low-BLEU multi-target groups
-    "so": "som_Latn",   # no official direct OPUS-MT release
-    "bn": "ben_Beng",   # no official direct/tc-big OPUS-MT release
-    "ko": "kor_Hang",   # only OPUS-MT release is tc-big, BLEU 13.7 - modest
-    "ur": "urd_Arab",   # direct OPUS-MT release exists but BLEU 12.1/chrF .39
 }
 
 # Voices that are plain VITS ONNX rather than Piper bundles, keyed by the
-# directory under models/tts/. Piper has no voice for these languages.
-VITS_VOICES = {"ig": "ig", "yo": "yo", "ha": "ha", "tl": "tl", "so": "so",
-               "am": "am"}
+# directory under models/tts/. Piper has no voice for these three languages.
+VITS_VOICES = {"ig": "ig", "yo": "yo", "ha": "ha"}
 
 
 @dataclass
@@ -249,29 +226,11 @@ ALL_VOICES = {
     "hi": "hi_IN-pratham-medium",
     "zh": "zh_CN-huayan-medium",
     "sw": "sw_CD-lanfrica-medium",
-
-    # --- third language wave --------------------------------------------
-    "ko": "ko_KR-kss-medium",
-    # Japanese is NOT enabled here even though ja_JP-hi_fi_captain-medium is
-    # downloaded and sitting in models/tts/: every Piper Japanese voice needs
-    # pyopenjtalk for phonemisation, and pyopenjtalk ships NO prebuilt wheel
-    # for any platform - installing it means compiling a C++ library with
-    # cmake on every machine that runs this, which does not fit an
-    # unsigned, no-admin-elevation installer. Until that changes, Japanese
-    # listeners get the transcript as text, like English. Re-enable with
-    # "ja": "ja_JP-hi_fi_captain-medium" once pyopenjtalk is installed.
-    "vi": "vi_VN-vais1000-medium",
-    "id": "id_ID-news_tts-medium",
-    "tr": "tr_TR-dfki-medium",
-    "pl": "pl_PL-darkman-medium",
-    "bn": "bn_BD-google-medium",
-    "ur": "ur_PK-fasih-medium",
     # No English voice on purpose: the room can already hear the speaker.
     # English listeners get the live transcript as text.
     #
-    # Igbo, Yoruba, Hausa, Tagalog, Somali and Amharic are absent here
-    # deliberately: Piper publishes no voice for any of them, so they are
-    # served by VITS_VOICES instead.
+    # Igbo, Yoruba and Hausa are absent here deliberately: Piper publishes no
+    # voice for any of them, so they are served by VITS_VOICES instead.
 }
 
 
