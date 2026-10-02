@@ -282,7 +282,19 @@
     padding: 18px 22px; border-bottom: 1px solid var(--border-soft);
   }
   .modal-head h2 { margin: 0; font-size: 15px; font-weight: 700; }
-  .modal-body { padding: 20px 22px; overflow-y: auto; }
+  /* overflow-y:auto already made this scroll correctly even before this rule -
+     with enough languages/recordings/reports to overflow .modal's max-height,
+     the rest was only ever a scroll away. But the default scrollbar is
+     invisible until hovered, so a still screenshot (or a quick glance) reads
+     as "the list stops here" with no hint more is below. A visible, styled
+     scrollbar fixes that without needing JS to detect overflow. */
+  .modal-body {
+    padding: 20px 22px; overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: var(--muted) transparent;
+  }
+  .modal-body::-webkit-scrollbar { width: 8px; }
+  .modal-body::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 4px; }
+  .modal-body::-webkit-scrollbar-thumb:hover { background: var(--fg); }
   .field { margin-bottom: 16px; }
   .field label { display: block; font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 7px; letter-spacing: .3px; text-transform: uppercase; }
   .field input {
