@@ -81,11 +81,19 @@
   main {
     padding: 22px 26px; display: grid;
     grid-template-columns: 1.05fr 1fr 1fr;
-    grid-template-rows: auto 1fr;
+    /* minmax(220px, 1fr), not bare 1fr: on a short window/pane the bottom
+       row used to get whatever pixels were left over, sometimes only a few
+       - Session Information's fixed 5 rows then rendered inside a scroll box
+       a couple of lines tall, "legible" only in the most technical sense.
+       220px is enough to show all 5 rows without their own inner scrollbar
+       at any reasonable size; overflow-y:auto below is the fallback for
+       windows too short even for that, so content is always reachable by
+       scrolling the page rather than being crushed into illegibility. */
+    grid-template-rows: minmax(170px, auto) minmax(220px, 1fr);
     grid-template-areas:
       "source  control    meter"
       "transcript listeners session";
-    gap: 18px; overflow: hidden; min-height: 0;
+    gap: 18px; overflow-y: auto; overflow-x: hidden; min-height: 0;
   }
   .source-card { grid-area: source; }
   .control-card { grid-area: control; }
