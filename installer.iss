@@ -19,8 +19,6 @@
 ; extracted together - see the [Run]/output note below. If a future language
 ; wave makes even this unwieldy, the remaining lever is dropping the fallback
 ; speech engines (parakeet-110m, whisper base.en: 337 MB).
-DiskSpanning=yes
-DiskSliceSize=max
 
 #if !FileExists(AddBackslash(SourcePath) + "models-ship\models\models-manifest.json")
   #error models-ship\models is missing. Run: python scripts/build_models_ship.py --clean
@@ -41,6 +39,10 @@ DiskSliceSize=max
 #define AppExeName     "NeoSermon.exe"
 
 [Setup]
+; DiskSpanning: see the SIZE LIMIT note at the top of this file. "max" keeps
+; the slice count as low as possible rather than aiming for literal floppies.
+DiskSpanning=yes
+DiskSliceSize=max
 ; Unchanged across the rename from "Sermon Translation Speaker". Windows keys
 ; an installed program on this GUID, so keeping it makes this installer an
 ; UPGRADE of an existing install rather than a second app beside it.

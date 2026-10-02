@@ -169,7 +169,14 @@
   .speech-chip.active .wdot { animation: pulse-dot 1s ease-in-out infinite; }
 
   .blocks { display: flex; gap: 3px; height: 34px; align-items: flex-end; margin-bottom: 8px; }
-  .blocks .blk { flex: 1; border-radius: 3px; background: #131c2c; transition: background .08s linear; }
+  /* paintMeter() (below) only ever writes `background` per block - lit vs
+     unlit is colour, not height, like the LED segments on a hardware VU
+     meter. Without an explicit height every block defaults to its (empty)
+     content height of 0, so the whole meter rendered - correct colours and
+     all - at zero pixels tall. align-items:flex-end above is what a
+     variable-height version would need; this one is uniform, so each block
+     just fills the container. */
+  .blocks .blk { flex: 1; height: 100%; border-radius: 3px; background: #131c2c; transition: background .08s linear; }
   .meter-scale { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted-dim); font-variant-numeric: tabular-nums; }
   .meter-title-sub { font-size: 12px; color: var(--muted-dim); margin-top: 2px; }
 
