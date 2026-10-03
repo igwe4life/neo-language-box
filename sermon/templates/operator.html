@@ -543,7 +543,7 @@
       <div class="field">
         <label for="in-slug">Listener URL</label>
         <div class="url-row">
-          <span class="url-prefix" id="url-prefix">/listeners/</span>
+          <span class="url-prefix" id="url-prefix">/neo/</span>
           <input id="in-slug" type="text" maxlength="60" placeholder="auto from event name">
         </div>
         <div class="url-preview" id="url-preview">&nbsp;</div>
@@ -959,7 +959,7 @@ function slugifyPreview(text) {
 function updateUrlPreview() {
   const slug = $("in-slug").value.trim() || slugifyPreview($("in-event").value) || "";
   const base = lanOrigin || location.origin;
-  $("url-preview").textContent = slug ? `${base}/listeners/${slug}` : `${base}/ (no custom link set)`;
+  $("url-preview").textContent = slug ? `${base}/neo/${slug}` : `${base}/ (no custom link set)`;
 }
 $("in-slug").addEventListener("input", updateUrlPreview);
 $("in-event").addEventListener("input", () => { if (!$("in-slug").value) updateUrlPreview(); });

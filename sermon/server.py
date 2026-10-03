@@ -267,12 +267,15 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
         path = request.path.split("?", 1)[0]
         if path in ("/ws", "/mic"):
             return None
-        # /listeners/<anything> is the shareable vanity URL (item 8): it always
+        # /neo/<anything> is the shareable vanity URL (item 8): it always
         # serves the same listener page as "/", regardless of what the slug
         # is or whether one has even been configured. The slug is cosmetic -
         # there is no auth anywhere in this app - so a stale or mistyped slug
         # must never turn into a broken link for an arriving listener.
-        if path in ("/", "/index.html", "/listen") or path.startswith("/listeners/"):
+        # "/listeners/" is kept working too so an already-shared/bookmarked
+        # link from before this rename doesn't 404.
+        if (path in ("/", "/index.html", "/listen")
+                or path.startswith("/neo/") or path.startswith("/listeners/")):
             body = _read(LISTENER_HTML)
             return Response(200, "OK", Headers([
                 ("Content-Type", "text/html; charset=utf-8"),
@@ -621,9 +624,9 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
             if not listener_url:
                 listener_url = "https://<no-lan-ip>/"
             # The vanity path, when the operator has set one - purely cosmetic,
-            # "/listeners/<anything>" already works regardless (see above).
+            # "/neo/<anything>" already works regardless (see above).
             if broadcaster.listener_slug:
-                listener_url = f"{listener_url.rstrip('/')}/listeners/{broadcaster.listener_slug}"
+                listener_url = f"{listener_url.rstrip('/')}/neo/{broadcaster.listener_slug}"
             page = _read(QR_HTML).decode("utf-8")
             page = page.replace("{{URL}}", listener_url)
             page = page.replace("{{QR_SVG}}", _qr_svg(listener_url))

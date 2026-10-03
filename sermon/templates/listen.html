@@ -282,8 +282,13 @@ function buildLangChips() {
   };
   gateBox.innerHTML = "";
   topBox.innerHTML = "";
+  // English is the source language, not a translation - the room already
+  // hears it live, so it is not offered as something to pick here. It stays
+  // in LANGS/LANG_ORDER (the operator's own dashboard still shows it), this
+  // just skips it when building the listener-facing chips.
   LANG_ORDER.forEach(code => {
     const m = LANGS[code] || {};
+    if (m.source) return;
     gateBox.appendChild(mk(code, m.native || code.toUpperCase()));
     topBox.appendChild(mk(code, code.toUpperCase()));
   });
