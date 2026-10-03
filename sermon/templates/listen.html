@@ -3,155 +3,236 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="theme-color" content="#000">
+<meta name="theme-color" content="#020b1d">
 <title>Neo Sermon</title>
 <style>
+  /* Palette handed over by the project owner's own listener mockup -
+     adopted wholesale rather than reinvented. Every ID below that the
+     script touches (#gate, #top, #mute, #report-btn, #status, #caption,
+     #stage, #viz, #report-sheet, #report-toast, #report-cancel) is the
+     SAME element the working page already had; only the look changed. */
   :root {
-    --bg: #000;
-    --fg: #f2f2f2;
-    --muted: #6a6a6a;
-    --accent: #7cc4ff;
-    --accent-strong: #2b8dff;
-    --pill-bg: rgba(255, 255, 255, 0.06);
-    --pill-border: rgba(255, 255, 255, 0.12);
+    --bg: #020b1d; --panel: #071a38; --panel2: #0a2145;
+    --line: rgba(105, 170, 255, .18);
+    --fg: #f5f8ff; --muted: #8ea7ca; --muted-dim: #526f99;
+    --blue: #1688ff; --cyan: #43c6ff;
+    --pill-bg: rgba(255, 255, 255, 0.04);
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html, body {
-    margin: 0; padding: 0; height: 100vh; overflow: hidden;
+    margin: 0; padding: 0; min-height: 100%; overflow-x: hidden;
     background: var(--bg); color: var(--fg);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent;
   }
   body {
+    background:
+      radial-gradient(circle at 15% 0%, rgba(21,104,220,.25), transparent 34%),
+      radial-gradient(circle at 100% 30%, rgba(0,174,255,.13), transparent 30%),
+      linear-gradient(145deg, #020817 0%, #06152f 50%, #020916 100%);
+  }
+  button { font: inherit; color: inherit; border: 0; cursor: pointer; }
+
+  .app {
+    width: min(100%, 520px); min-height: 100vh; margin: auto; position: relative;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
     display: flex; flex-direction: column;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right)
-            env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
 
-  /* Top language chips - a HORIZONTALLY scrolling strip, not a wrapping grid.
-     With up to 14 languages, wrapping onto several rows pushed the
-     visualiser/caption down with no way to scroll back up to the rest - this
-     avoids that entirely rather than needing a scroll fix for it. */
+  /* -------------------------------------------------------------- header */
+  .topbar {
+    position: sticky; top: 0; z-index: 20; flex-shrink: 0;
+    padding: 13px 16px 10px;
+    background: linear-gradient(180deg, rgba(2,11,29,.98), rgba(2,11,29,.82), transparent);
+    backdrop-filter: blur(14px);
+  }
+  .brand-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .logo {
+    width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+    display: grid; place-items: center;
+    background: linear-gradient(135deg, #0b4d9b, #12a5ff);
+    box-shadow: 0 10px 30px rgba(0,130,255,.28);
+    font-weight: 900; font-size: 16px;
+  }
+  .brand-text { min-width: 0; }
+  .brand-text h1 {
+    font-size: 14px; margin: 0; letter-spacing: .04em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .brand-text span { display: block; color: var(--muted); font-size: 11px; margin-top: 1px; }
+  .live {
+    display: flex; align-items: center; gap: 7px; flex-shrink: 0;
+    padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px;
+    background: rgba(8,28,58,.72); font-size: 11px; font-weight: 700;
+  }
+  .live .dot {
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    background: #c0392b; box-shadow: 0 0 10px currentColor; color: #c0392b;
+  }
+  .live .dot.live { background: #35d39a; color: #35d39a; }
+  .marquee {
+    overflow: hidden; margin-top: 10px; white-space: nowrap;
+    border-top: 1px solid rgba(90,150,220,.1); border-bottom: 1px solid rgba(90,150,220,.1);
+    padding: 7px 0;
+  }
+  .marquee-track {
+    display: inline-block; padding-left: 100%;
+    animation: scroll 22s linear infinite;
+    font-size: 11px; color: #bcd0ef; font-weight: 600; letter-spacing: .02em;
+  }
+  @keyframes scroll { to { transform: translateX(-100%); } }
+
+  /* ------------------------------------------------- language drawer (#top) */
+  /* Was a horizontally-scrolling strip; same role (switch language while
+     already listening), restyled as the owner's collapsible grid drawer.
+     Scrolls internally past a bounded height rather than wrapping forever -
+     the same reasoning the full-screen gate below already applies, now with
+     up to several dozen languages possible. */
+  .language-drawer {
+    margin: 10px 14px 0; flex-shrink: 0;
+    border: 1px solid var(--line); border-radius: 18px; overflow: hidden;
+    background: linear-gradient(135deg, rgba(10,34,71,.9), rgba(5,19,43,.88));
+    box-shadow: 0 14px 45px rgba(0,0,0,.24);
+  }
+  .drawer-head {
+    width: 100%; display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; background: transparent;
+  }
+  .drawer-title { font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: #8eacd3; font-weight: 800; }
+  .chevron { font-size: 13px; color: #6e8db7; transition: transform .25s; }
+  .language-drawer.open .chevron { transform: rotate(180deg); }
   #top {
-    display: flex; align-items: center; gap: 10px; z-index: 1;
-    padding: 14px 44px 6px 12px;
-    overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap;
-    scrollbar-width: none; -ms-overflow-style: none;
-    -webkit-overflow-scrolling: touch;
-    mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+    display: none; grid-template-columns: repeat(3, 1fr); gap: 7px;
+    padding: 0 10px 11px; max-height: 38vh; overflow-y: auto;
   }
-  #top::-webkit-scrollbar { display: none; }
+  .language-drawer.open #top { display: grid; }
+  #top::-webkit-scrollbar { width: 6px; }
+  #top::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 6px; }
+
   .chip {
-    background: var(--pill-bg); color: var(--fg);
-    border: 1px solid var(--pill-border); border-radius: 999px;
-    padding: 8px 18px; font-size: 15px; font-weight: 600;
-    letter-spacing: .5px; cursor: pointer; user-select: none;
-    display: inline-flex; align-items: center; gap: 6px;
-    flex-shrink: 0;
-    transition: background 0.2s, border-color 0.2s;
+    padding: 10px 5px; border: 1px solid rgba(91,155,230,.14);
+    background: rgba(255,255,255,.025); border-radius: 11px;
+    text-align: center; color: #a9c0e1; font-size: 12px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    transition: .15s; user-select: none; min-width: 0;
   }
+  .chip .flag { font-size: 14px; flex-shrink: 0; }
+  .chip span:not(.flag):not(.check) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip .check { display: none; font-size: 11px; flex-shrink: 0; }
   .chip.on {
-    background: var(--accent-strong); border-color: var(--accent-strong);
-    color: #fff;
+    background: linear-gradient(135deg, #0b63c7, #0d9eea); color: #fff;
+    border-color: rgba(92,198,255,.65); box-shadow: 0 5px 20px rgba(0,133,255,.25);
   }
-  .chip .flag { font-size: 17px; }
-  .chip .check { display: none; font-size: 13px; }
   .chip.on .check { display: inline; }
-  #mute {
-    position: absolute; top: 12px; right: 12px; z-index: 2;
-    background: transparent; border: none; color: var(--muted);
-    font-size: 22px; padding: 8px; cursor: pointer;
-  }
-  #mute.on { color: var(--accent); }
-  #report-btn {
-    position: absolute; top: 14px; right: 58px; z-index: 2;
-    background: transparent; border: none; color: var(--muted);
-    font-size: 19px; padding: 8px; cursor: pointer; line-height: 1;
-  }
-  #status {
-    position: absolute; top: 22px; left: 20px; z-index: 2;
-    width: 8px; height: 8px; border-radius: 50%;
-    background: #b93a3a; box-shadow: 0 0 8px currentColor;
-  }
-  #status.live { background: #35c46c; }
 
-  /* Center: visualiser */
-  #stage {
-    flex: 1; display: flex; align-items: center; justify-content: center;
-    position: relative;
+  /* ------------------------------------------------------------- content */
+  .content { padding: 18px 16px 10px; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .hero { text-align: center; padding: 6px 5px 4px; flex-shrink: 0; }
+  .eyebrow { font-size: 10px; color: #5ab9ff; letter-spacing: .22em; text-transform: uppercase; font-weight: 800; }
+  .hero h2 { font-size: 25px; line-height: 1.1; margin: 8px 0 7px; letter-spacing: -.03em; }
+  .hero p { color: var(--muted); font-size: 12.5px; line-height: 1.55; margin: 0 auto; max-width: 340px; }
+
+  .visual {
+    margin: 16px 0; padding: 18px 12px; border-radius: 24px; flex-shrink: 0;
+    border: 1px solid var(--line);
+    background:
+      radial-gradient(circle at 50% 50%, rgba(16,126,239,.13), transparent 55%),
+      linear-gradient(145deg, rgba(8,30,64,.86), rgba(3,14,32,.9));
+    min-height: 170px; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; position: relative; overflow: hidden;
   }
-  canvas#viz {
-    width: 100%; max-width: 620px; height: 260px;
-    display: block;
+  canvas#viz { width: 100%; max-width: 420px; height: 96px; display: block; }
+  .visual-label {
+    margin-top: 6px; font-size: 10px; color: #6f91bc;
+    letter-spacing: .12em; text-transform: uppercase;
   }
 
-  /* Bottom: current translation only */
+  .transcription {
+    border: 1px solid var(--line); border-radius: 20px; padding: 16px;
+    background: rgba(7,25,54,.68); flex: 1; min-height: 140px;
+    display: flex; flex-direction: column;
+  }
+  .trans-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-shrink: 0; }
+  .trans-head strong { font-size: 12px; }
+  .trans-head .status { font-size: 10px; color: #4ec7ff; font-weight: 700; letter-spacing: .04em; }
   #caption {
-    padding: 22px 22px calc(28px + env(safe-area-inset-bottom));
-    text-align: center; line-height: 1.35;
-    font-size: clamp(22px, 6.5vw, 34px);
-    font-weight: 500;
-    min-height: 28vh;
-    transition: opacity 0.35s ease;
+    font-size: 15px; line-height: 1.75; color: #dce8fb; margin: 0;
+    overflow-y: auto; flex: 1;
   }
-  #caption.dim { opacity: 0.35; }
-  #caption.empty {
-    color: var(--muted); font-style: italic;
-    font-size: clamp(16px, 4.5vw, 22px); font-weight: 400;
+  #caption.empty { color: var(--muted-dim); font-style: italic; font-size: 13.5px; font-weight: 400; }
+  #caption.dim { opacity: .4; }
+
+  /* ---------------------------------------------------------- bottom bar */
+  .bottom {
+    position: sticky; bottom: 0; z-index: 25; flex-shrink: 0;
+    padding: 12px 16px calc(10px + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, transparent, rgba(1,8,21,.92) 30%, rgba(1,8,21,.99));
+    backdrop-filter: blur(15px);
   }
+  #mute {
+    width: 100%; min-height: 54px; border-radius: 17px;
+    background: linear-gradient(100deg, #0867d2, #08a4ed);
+    box-shadow: 0 12px 32px rgba(0,126,255,.32);
+    font-size: 14.5px; font-weight: 800; letter-spacing: .01em;
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    transition: transform .15s, background .2s;
+  }
+  #mute:active { transform: scale(.985); }
+  #mute:not(.on) { background: linear-gradient(100deg, #1c2740, #233049); box-shadow: none; }
+  #mute .mic-circle {
+    width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+    background: rgba(255,255,255,.16); display: grid; place-items: center; font-size: 12px;
+  }
+  #report-btn {
+    display: block; width: 100%; text-align: center; margin-top: 8px;
+    color: var(--muted-dim); font-size: 11px; font-weight: 600;
+    background: transparent; padding: 4px;
+  }
+  #report-btn:active { color: var(--muted); }
 
-  /* First-tap gate - full-screen language pick + audio unlock.
-
-     With up to 14 languages, the grid can be taller than a phone screen.
-     justify-content:flex-start (not center) plus overflow-y:auto on the gate
-     itself is the outer safety net; .langgroup additionally scrolls WITHIN
-     its own bounded height so the brand/subtitle/Start-button stay in view
-     and only the language grid scrolls - avoids a fixed-height section ever
-     hiding a language with no way to reach it. */
+  /* ------------------------------------------------------------ first-tap gate */
+  /* Full-screen language pick + audio unlock. justify-content:flex-start +
+     overflow-y:auto on the gate itself, plus a bounded/scrollable
+     .langgroup, is what keeps a long language list from ever being
+     unreachable on a short phone screen - do not simplify away. */
   #gate {
     position: fixed; inset: 0; z-index: 100;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: flex-start; gap: 22px;
-    padding: calc(36px + env(safe-area-inset-top)) 24px
-             calc(28px + env(safe-area-inset-bottom));
-    background: radial-gradient(circle at 50% 40%, #142238 0%, #000 80%);
-    text-align: center;
-    overflow-y: auto;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start; gap: 20px;
+    padding: calc(40px + env(safe-area-inset-top)) 24px calc(28px + env(safe-area-inset-bottom));
+    background:
+      radial-gradient(circle at 50% 30%, rgba(21,104,220,.22), transparent 40%),
+      linear-gradient(160deg, #020817 0%, #06152f 55%, #020916 100%);
+    text-align: center; overflow-y: auto;
   }
   #gate.hidden { display: none; }
-  #gate .brand {
-    font-size: 22px; font-weight: 600; letter-spacing: .4px;
-    color: #fff; flex-shrink: 0;
-  }
-  #gate .sub {
-    color: var(--muted); font-size: 15px; max-width: 320px; line-height: 1.5;
-    flex-shrink: 0;
-  }
+  #gate .logo { width: 56px; height: 56px; border-radius: 16px; font-size: 20px; flex-shrink: 0; }
+  #gate .brand { font-size: 20px; font-weight: 800; letter-spacing: .03em; color: #fff; flex-shrink: 0; }
+  #gate .sub { color: var(--muted); font-size: 14px; max-width: 320px; line-height: 1.55; flex-shrink: 0; }
   #gate .langgroup {
-    display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
-    max-height: 48vh; overflow-y: auto; width: 100%; max-width: 480px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    max-height: 46vh; overflow-y: auto; width: 100%; max-width: 420px;
     padding: 6px; align-content: flex-start;
   }
   #gate .langgroup::-webkit-scrollbar { width: 6px; }
   #gate .langgroup::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 6px; }
-  #gate .chip { padding: 14px 26px; font-size: 17px; }
+  #gate .chip { padding: 13px 6px; font-size: 13px; flex-direction: column; gap: 4px; }
+  #gate .chip .flag { font-size: 20px; }
   #gate .go { flex-shrink: 0; }
   #gate .go {
-    background: var(--accent-strong); color: white; border: none;
-    border-radius: 999px; padding: 18px 40px;
-    font-size: 18px; font-weight: 700; letter-spacing: .5px;
-    cursor: pointer; opacity: 0.5; pointer-events: none;
-    box-shadow: 0 8px 28px rgba(43, 141, 255, 0.35);
+    background: linear-gradient(100deg, #0867d2, #08a4ed); color: white; border: none;
+    border-radius: 999px; padding: 17px 44px;
+    font-size: 16px; font-weight: 800; letter-spacing: .02em;
+    cursor: pointer; opacity: 0.4; pointer-events: none;
+    box-shadow: 0 10px 30px rgba(0,126,255,.3);
     transition: opacity 0.2s;
   }
-  #gate .go.ready {
-    opacity: 1; pointer-events: auto;
-    animation: pulse-glow 2s infinite;
-  }
+  #gate .go.ready { opacity: 1; pointer-events: auto; animation: pulse-glow 2s infinite; }
   @keyframes pulse-glow {
-    0%, 100% { box-shadow: 0 8px 28px rgba(43, 141, 255, 0.35); }
-    50%      { box-shadow: 0 8px 46px rgba(43, 141, 255, 0.85); }
+    0%, 100% { box-shadow: 0 10px 30px rgba(0,126,255,.3); }
+    50%      { box-shadow: 0 10px 46px rgba(16,160,255,.8); }
   }
 
   .hidden { display: none !important; }
@@ -164,26 +245,19 @@
   }
   .report-card {
     width: 100%; max-width: 420px;
-    background: #111; border: 1px solid rgba(255,255,255,0.1);
+    background: var(--panel); border: 1px solid var(--line);
     border-radius: 20px 20px 0 0;
     padding: 22px 20px calc(18px + env(safe-area-inset-bottom));
     display: flex; flex-direction: column; gap: 10px;
   }
-  .report-title {
-    color: #fff; font-size: 16px; font-weight: 700; text-align: center;
-    margin-bottom: 4px;
-  }
+  .report-title { color: #fff; font-size: 16px; font-weight: 700; text-align: center; margin-bottom: 4px; }
   .report-opt {
-    background: rgba(255,255,255,0.06); color: var(--fg);
-    border: 1px solid rgba(255,255,255,0.12); border-radius: 12px;
-    padding: 15px; font-size: 15px; font-weight: 600; cursor: pointer;
-    text-align: center;
+    background: rgba(255,255,255,0.05); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 12px;
+    padding: 15px; font-size: 15px; font-weight: 600; cursor: pointer; text-align: center;
   }
-  .report-opt:active { background: rgba(255,255,255,0.14); }
-  .report-cancel {
-    background: transparent; color: var(--muted); border: none;
-    padding: 12px; font-size: 14px; cursor: pointer; margin-top: 4px;
-  }
+  .report-opt:active { background: rgba(255,255,255,0.1); }
+  .report-cancel { background: transparent; color: var(--muted); border: none; padding: 12px; font-size: 14px; cursor: pointer; margin-top: 4px; }
   #report-toast {
     position: fixed; left: 50%; bottom: calc(26px + env(safe-area-inset-bottom));
     transform: translateX(-50%);
@@ -193,11 +267,17 @@
     transition: opacity .25s, transform .25s;
   }
   #report-toast.toast-off { opacity: 0; transform: translateX(-50%) translateY(10px); pointer-events: none; }
+
+  @media (min-width: 521px) {
+    body { padding: 20px 0; }
+    .app { border: 1px solid rgba(77,138,210,.12); border-radius: 26px; overflow: hidden; box-shadow: 0 30px 100px rgba(0,0,0,.45); min-height: calc(100vh - 40px); }
+  }
 </style>
 </head>
 <body>
 
 <div id="gate">
+  <div class="logo">NS</div>
   <div class="brand">Neo Sermon</div>
   <div class="sub">Pick a language.<br>The translation will play automatically as the speaker talks.</div>
   <!-- Chips are built from the language list the server advertises, so a
@@ -206,15 +286,50 @@
   <button class="go" id="gate-go">Start listening</button>
 </div>
 
-<div id="status" aria-label="connection"></div>
-<button id="report-btn" aria-label="report an issue" title="Report an issue">⚑</button>
-<button id="mute" class="on" aria-label="mute">🔊</button>
+<div class="app">
+  <header class="topbar">
+    <div class="brand-row">
+      <div class="brand">
+        <div class="logo">NS</div>
+        <div class="brand-text"><h1>NEO SERMON</h1><span>Listener Experience</span></div>
+      </div>
+      <div class="live"><span class="dot" id="status"></span><span id="live-label">CONNECTING</span></div>
+    </div>
+    <div class="marquee"><div class="marquee-track">NEO SERMON &nbsp;•&nbsp; LIVE INTERPRETATION &nbsp;•&nbsp; LISTEN IN YOUR LANGUAGE &nbsp;•&nbsp; NEO SERMON &nbsp;•&nbsp; LIVE INTERPRETATION &nbsp;•&nbsp; </div></div>
+  </header>
 
-<div id="top"></div>
+  <section class="language-drawer" id="drawer">
+    <button class="drawer-head" id="drawer-toggle" aria-expanded="false">
+      <span class="drawer-title">Change language</span><span class="chevron">⌃</span>
+    </button>
+    <div id="top"></div>
+  </section>
 
-<div id="stage"><canvas id="viz"></canvas></div>
+  <main class="content">
+    <div class="hero">
+      <div class="eyebrow">Now Broadcasting</div>
+      <h2 id="hero-title">Listen to Neo Sermon</h2>
+      <p id="language-hint">The translation will play automatically as the speaker talks.</p>
+    </div>
 
-<div id="caption" class="empty">waiting for the speaker…</div>
+    <div class="visual" id="stage">
+      <canvas id="viz"></canvas>
+      <div class="visual-label" id="wave-label">Ready to listen</div>
+    </div>
+
+    <section class="transcription">
+      <div class="trans-head"><strong>Live Transcription</strong><span class="status" id="trans-status">WAITING</span></div>
+      <p id="caption" class="empty">waiting for the speaker…</p>
+    </section>
+  </main>
+
+  <div class="bottom">
+    <button id="mute" class="on" aria-label="mute">
+      <span class="mic-circle" id="mic-icon">🔊</span><span id="mute-text">Listening</span>
+    </button>
+    <button id="report-btn" aria-label="report an issue">⚑ Report an issue</button>
+  </div>
+</div>
 
 <!-- Report sheet (item 4): one tap to report, no form to fill in. -->
 <div id="report-sheet" class="hidden">
@@ -242,18 +357,31 @@ let voiceOn = store.get("voice", "1") === "1";
 
 // ---------------------------------------------------------- DOM shortcuts
 const $ = id => document.getElementById(id);
-const gate      = $("gate");
-const gateGo    = $("gate-go");
-const gateBox   = $("gate-langs");
-const topBox    = $("top");
-let   gateLangs = [];        // rebuilt when the server tells us its languages
-let   topLangs  = [];
-const muteBtn   = $("mute");
-const statusDot = $("status");
-const caption   = $("caption");
-const stage     = $("stage");
-const viz       = $("viz");
-const vctx      = viz.getContext("2d");
+const gate       = $("gate");
+const gateGo     = $("gate-go");
+const gateBox    = $("gate-langs");
+const topBox     = $("top");
+let   gateLangs  = [];        // rebuilt when the server tells us its languages
+let   topLangs   = [];
+const muteBtn    = $("mute");
+const muteText   = $("mute-text");
+const micIcon    = $("mic-icon");
+const statusDot  = $("status");
+const liveLabel  = $("live-label");
+const transStatus = $("trans-status");
+const waveLabel  = $("wave-label");
+const languageHint = $("language-hint");
+const caption    = $("caption");
+const stage      = $("stage");
+const viz        = $("viz");
+const vctx       = viz.getContext("2d");
+const drawer     = $("drawer");
+const drawerToggle = $("drawer-toggle");
+
+drawerToggle.addEventListener("click", () => {
+  const open = drawer.classList.toggle("open");
+  drawerToggle.setAttribute("aria-expanded", open);
+});
 
 // --------------------------------------------------- language list + chips
 // Populated from the welcome message. Until then we have no chips, which is
@@ -271,7 +399,9 @@ function buildLangChips() {
     f.className = "flag";
     f.textContent = m.flag || "";
     b.appendChild(f);
-    b.appendChild(document.createTextNode(label));
+    const t = document.createElement("span");
+    t.textContent = label;
+    b.appendChild(t);
     // Extra, unambiguous "this one is selected" marker beyond just colour -
     // readable even for a colour-blind listener or in bright sunlight.
     const chk = document.createElement("span");
@@ -290,7 +420,7 @@ function buildLangChips() {
     const m = LANGS[code] || {};
     if (m.source) return;
     gateBox.appendChild(mk(code, m.native || code.toUpperCase()));
-    topBox.appendChild(mk(code, code.toUpperCase()));
+    topBox.appendChild(mk(code, m.native || code.toUpperCase()));
   });
   gateLangs = Array.from(gateBox.querySelectorAll(".chip"));
   topLangs = Array.from(topBox.querySelectorAll(".chip"));
@@ -299,6 +429,8 @@ function buildLangChips() {
   }));
   topLangs.forEach(b => b.addEventListener("click", () => {
     setLang(b.dataset.lang, /*live*/ true);
+    drawer.classList.remove("open");
+    drawerToggle.setAttribute("aria-expanded", "false");
   }));
   // A language remembered from a previous service may no longer be offered.
   if (lang && !LANGS[lang]) { lang = ""; store.set("lang", ""); }
@@ -318,7 +450,7 @@ function setLang(next, live) {
   }
 }
 
-// Arabic reads right-to-left; without this the caption renders with its
+// Arabic/Urdu read right-to-left; without this the caption renders with its
 // punctuation and any embedded latin words in the wrong places.
 function applyDirection() {
   const rtl = !!(LANGS[lang] && LANGS[lang].rtl);
@@ -338,9 +470,12 @@ function paintLangs() {
   gateLangs.forEach(b => b.classList.toggle("on", b.dataset.lang === lang));
   topLangs .forEach(b => b.classList.toggle("on", b.dataset.lang === lang));
   gateGo.classList.toggle("ready", !!lang);
+  const m = LANGS[lang];
+  if (m) languageHint.textContent = `Listening in ${m.native || lang.toUpperCase()}.`;
 }
 function paintMute() {
-  muteBtn.textContent = voiceOn ? "🔊" : "🔇";
+  micIcon.textContent = voiceOn ? "🔊" : "🔇";
+  muteText.textContent = voiceOn ? "Listening" : "Muted";
   muteBtn.classList.toggle("on", voiceOn);
 }
 paintLangs(); paintMute();
@@ -390,19 +525,21 @@ gateGo.addEventListener("click", () => {
 });
 
 // ----------------------------------------------------- canvas visualiser
-// Two states:
-//   idle:    a gentle breathing dot in the center
-//   playing: live waveform of the current audio through an AnalyserNode
+// Bars, not an oscilloscope line, to match the owner's design - but still
+// driven by REAL analyser data, not decorative CSS animation. Two states:
+//   idle:    bars gently breathing at a low, even height
+//   playing: bar heights follow the live frequency spectrum
 let audioCtx = null;
 let analyser = null;
 let sourceNode = null;
 let vizFrame = null;
 let breathing = true;
+const BAR_COUNT = 28;
 
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   const w = viz.clientWidth || 300;
-  const h = viz.clientHeight || 240;
+  const h = viz.clientHeight || 96;
   viz.width = Math.round(w * dpr);
   viz.height = Math.round(h * dpr);
   vctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -410,43 +547,49 @@ function resizeCanvas() {
 window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
 
-function drawIdle(t) {
+function drawBars(heights) {
   const w = viz.clientWidth, h = viz.clientHeight;
   vctx.clearRect(0, 0, w, h);
-  const cx = w / 2, cy = h / 2;
-  const r0 = Math.min(w, h) * 0.05;
-  const pulse = (Math.sin(t / 700) + 1) / 2;      // 0..1
-  vctx.fillStyle = `rgba(124, 196, 255, ${0.08 + pulse * 0.15})`;
-  vctx.beginPath(); vctx.arc(cx, cy, r0 + pulse * 8, 0, Math.PI * 2); vctx.fill();
-  vctx.fillStyle = `rgba(124, 196, 255, ${0.45 + pulse * 0.3})`;
-  vctx.beginPath(); vctx.arc(cx, cy, r0, 0, Math.PI * 2); vctx.fill();
+  const gap = 4;
+  const barW = Math.max(2, (w - gap * (BAR_COUNT - 1)) / BAR_COUNT);
+  const grad = vctx.createLinearGradient(0, h, 0, 0);
+  grad.addColorStop(0, "#1676ef");
+  grad.addColorStop(1, "#55d1ff");
+  vctx.fillStyle = grad;
+  for (let i = 0; i < BAR_COUNT; i++) {
+    const bh = Math.max(3, heights[i] * h);
+    const x = i * (barW + gap);
+    const y = (h - bh) / 2;
+    const r = Math.min(barW / 2, 6);
+    vctx.beginPath();
+    if (vctx.roundRect) vctx.roundRect(x, y, barW, bh, r);
+    else vctx.rect(x, y, barW, bh);
+    vctx.fill();
+  }
+}
+
+function drawIdle(t) {
+  const heights = new Array(BAR_COUNT);
+  for (let i = 0; i < BAR_COUNT; i++) {
+    const phase = t / 900 + i * 0.35;
+    heights[i] = 0.06 + (Math.sin(phase) + 1) / 2 * 0.05;
+  }
+  drawBars(heights);
 }
 
 function drawWave() {
-  const w = viz.clientWidth, h = viz.clientHeight;
-  vctx.clearRect(0, 0, w, h);
   if (!analyser) return;
-  const buf = new Float32Array(analyser.fftSize);
-  analyser.getFloatTimeDomainData(buf);
-  const cx = w / 2, cy = h / 2;
-  vctx.strokeStyle = "#7cc4ff";
-  vctx.lineWidth = 2.5;
-  vctx.beginPath();
-  const step = Math.max(1, Math.floor(buf.length / w));
-  for (let x = 0; x < w; x++) {
-    const s = buf[Math.min(buf.length - 1, x * step)];
-    const y = cy + s * (h * 0.4);
-    if (x === 0) vctx.moveTo(x, y); else vctx.lineTo(x, y);
+  const freq = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(freq);
+  const heights = new Array(BAR_COUNT);
+  const step = Math.max(1, Math.floor(freq.length / BAR_COUNT));
+  for (let i = 0; i < BAR_COUNT; i++) {
+    let sum = 0, n = 0;
+    for (let j = i * step; j < Math.min(freq.length, (i + 1) * step); j++) { sum += freq[j]; n++; }
+    const avg = n ? sum / n / 255 : 0;
+    heights[i] = Math.min(1, 0.08 + avg * 1.1);
   }
-  vctx.stroke();
-
-  // Level-driven halo
-  let sum = 0;
-  for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-  const rms = Math.sqrt(sum / buf.length);
-  const glow = Math.min(1, rms * 6);
-  vctx.fillStyle = `rgba(43, 141, 255, ${0.05 + glow * 0.25})`;
-  vctx.beginPath(); vctx.arc(cx, cy, 12 + glow * 60, 0, Math.PI * 2); vctx.fill();
+  drawBars(heights);
 }
 
 function vizLoop(t) {
@@ -460,6 +603,10 @@ function paintCaption(text, empty) {
   caption.classList.toggle("empty", !!empty);
   caption.textContent = text || (empty ? "waiting for the speaker…" : "");
   caption.classList.remove("dim");
+  transStatus.textContent = empty ? "WAITING" : "LIVE" + (lang ? " • " + lang.toUpperCase() : "");
+  waveLabel.textContent = breathing
+    ? (empty ? "Ready to listen" : "Listening" + (lang ? " in " + (LANGS[lang] ? (LANGS[lang].native || lang) : lang) : ""))
+    : "Playing translation";
 }
 
 // -------------------------------------------------------- audio playback
@@ -504,7 +651,7 @@ function connectAnalyser(mediaEl) {
     if (sourceNode) { try { sourceNode.disconnect(); } catch {} }
     sourceNode = audioCtx.createMediaElementSource(mediaEl);
     analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 1024;
+    analyser.fftSize = 128;
     sourceNode.connect(analyser);
     analyser.connect(audioCtx.destination);
     breathing = false;
@@ -582,12 +729,13 @@ function playServerAudio(url) {
 function drainAudio() {
   if (currentAudio) return;
   const url = audioQueue.shift();
-  if (!url) { breathing = true; disconnectAnalyser(); return; }
+  if (!url) { breathing = true; disconnectAnalyser(); waveLabel.textContent = lang ? "Listening in " + (LANGS[lang] ? (LANGS[lang].native || lang) : lang) : "Ready to listen"; return; }
   const audio = new Audio(url);
   audio.crossOrigin = "anonymous";     // needed for MediaElementSource on same-origin too on some browsers
   audio.preload = "auto";
   currentAudio = audio;
   connectAnalyser(audio);
+  waveLabel.textContent = "Playing translation";
   const done = () => {
     if (currentAudio !== audio) return;
     currentAudio = null;
@@ -617,7 +765,10 @@ function playTTS(text) {
 // -------------------------------------------------------- websocket
 let ws = null;
 let reconnectDelay = 500;
-function setDot(live) { statusDot.classList.toggle("live", !!live); }
+function setDot(live) {
+  statusDot.classList.toggle("live", !!live);
+  liveLabel.textContent = live ? "LIVE" : "CONNECTING";
+}
 
 function receive(msg) {
   if (msg.type === "welcome") {
