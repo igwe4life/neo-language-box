@@ -142,7 +142,8 @@ class Broadcaster:
             history = list(self._history)
         await ws.send(json.dumps({"type": "welcome", "history": history,
                                   "targets": list(self.languages),
-                                  "languages": self.language_meta},
+                                  "languages": self.language_meta,
+                                  "event": self.session_meta.get("event", "")},
                                  ensure_ascii=False))
 
     def unregister(self, ws: ServerConnection) -> None:

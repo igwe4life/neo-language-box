@@ -166,7 +166,13 @@ LANGUAGES = {
 }
 
 DEFAULT_TARGETS = ["fr", "es", "pt", "de", "it", "ru", "ar", "hi", "zh",
-                   "sw", "ig", "yo", "ha"]
+                   "sw", "yo", "ha"]
+# Igbo is pulled from the default set temporarily at the project owner's
+# request (2026-10-04): investigating reports of it sounding wrong in the
+# field. The model, config entry and NLLB_TARGETS/VITS_VOICES mapping below
+# are left untouched, so putting "ig" back here is the entire fix once
+# whatever is actually wrong is found - see the pipeline/sinks latency fix
+# in the same commit for the leading suspect (it affects yo/ha too).
 
 # Targets served by NLLB-200 rather than a bilingual OPUS-MT model, mapped to
 # NLLB's own language tags. OPUS-MT does publish models for all four, but they

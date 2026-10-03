@@ -206,9 +206,33 @@ class BroadcastSink(Sink):
         self.synth_failures = 0
         self._pool = ThreadPoolExecutor(
             max_workers=_SYNTH_WORKERS, thread_name_prefix="tts-fanout")
+        # One worker draining a FIFO queue, not one thread per utterance: it
+        # keeps the per-language synthesis fan-out above concurrent (still
+        # via _pool) while guaranteeing utterances reach broadcast_audio()
+        # and the recorder's per-language files in the order they were
+        # spoken. A thread per utterance could let a fast, late utterance's
+        # audio land before a slow, earlier one's - fine for live playback
+        # (each message carries its own id) but it would scramble the
+        # recorded WAV files, which are appended to in whatever order calls
+        # arrive.
+        self._work_q: queue.Queue = queue.Queue()
+        self._stop = threading.Event()
+        self._broadcast_thread = threading.Thread(
+            target=self._broadcast_worker, daemon=True, name="tts-broadcast")
+        self._broadcast_thread.start()
 
     def close(self) -> None:
+        self._stop.set()
+        self._broadcast_thread.join(timeout=2.0)
         self._pool.shutdown(wait=False, cancel_futures=True)
+
+    def _broadcast_worker(self) -> None:
+        while not self._stop.is_set():
+            try:
+                result, counter, pending = self._work_q.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            self._synthesize_and_broadcast(result, counter, pending)
 
     def emit(self, result: PipelineResult) -> None:
         self.counter += 1
@@ -252,6 +276,20 @@ class BroadcastSink(Sink):
         if not pending:
             return
 
+        # Queued, not awaited: this used to call fut.result() on this thread,
+        # which is the SAME thread Pipeline.process() calls emit() on. That
+        # made synthesis time for THIS utterance a hard floor on when the
+        # NEXT utterance's transcription could even start - on a slower
+        # machine, or under the fan-out pool's own CPU contention among
+        # several heavy VITS voices (Igbo/Yoruba/Hausa), a few seconds of
+        # synthesis lag compounded utterance after utterance into a real
+        # backlog: captions freezing and the room's phones falling back to
+        # their own (wrong-sounding) voice for a stretch before catching up.
+        # The background worker drains this queue independently of STT/MT.
+        self._work_q.put((result, counter, pending))
+
+    def _synthesize_and_broadcast(self, result: PipelineResult, counter: int,
+                                   pending: list[str]) -> None:
         def _synthesize(lang):
             speech = self.speakers[lang].synthesize(result.translations[lang])
             return lang, speech
