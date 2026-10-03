@@ -7,17 +7,25 @@ phases add a French TTS sink and a websocket broadcaster by appending to
 
 from __future__ import annotations
 
+import os
 import queue
 import sys
 import threading
 import time
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from .config import SOURCE_LANG, TTSConfig
 from .console import enable_utf8_console  # re-exported for convenience
 from .pipeline import PipelineResult
 from .tts import Speaker
+
+# Same reasoning as pipeline.py's fan-out pool: synthesis is CPU-bound C++
+# (onnxruntime) work that releases the GIL, and VitsSpeaker now pins its own
+# session to one thread specifically so several of these can run at once
+# without each one reaching for every core.
+_SYNTH_WORKERS = max(2, min(4, os.cpu_count() or 2))
 
 __all__ = ["Sink", "ConsoleSink", "SpeechSink", "BroadcastSink",
            "enable_utf8_console"]
@@ -196,6 +204,11 @@ class BroadcastSink(Sink):
         self.audio_seconds_generated = 0.0
         self.synth_seconds = 0.0
         self.synth_failures = 0
+        self._pool = ThreadPoolExecutor(
+            max_workers=_SYNTH_WORKERS, thread_name_prefix="tts-fanout")
+
+    def close(self) -> None:
+        self._pool.shutdown(wait=False, cancel_futures=True)
 
     def emit(self, result: PipelineResult) -> None:
         self.counter += 1
@@ -238,10 +251,21 @@ class BroadcastSink(Sink):
 
         if not pending:
             return
+
+        def _synthesize(lang):
+            speech = self.speakers[lang].synthesize(result.translations[lang])
+            return lang, speech
+
+        # Synthesising every pending language concurrently, not one after
+        # another, is what keeps a language late in the list from missing the
+        # listener page's 6s wait-for-server-audio window (see pipeline.py's
+        # docstring - this was the other half of that same latency problem).
+        futures = {self._pool.submit(_synthesize, lang): lang for lang in pending}
         urls: dict[str, str] = {}
-        for lang in pending:
+        for fut in futures:
+            lang = futures[fut]
             try:
-                speech = self.speakers[lang].synthesize(result.translations[lang])
+                lang, speech = fut.result()
                 if speech.audio.size:
                     wav = _encode_wav_int16(speech.audio, speech.sample_rate)
                     urls[f"audio_{lang}"] = self.broadcaster.store_audio(

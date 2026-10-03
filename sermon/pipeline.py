@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from .audio import Utterance
 from .mt import Translator
 from .stt import Transcriber
+
+# Bounds how many languages translate concurrently per utterance. Each
+# individual translate() call already runs with intra_threads=1 on this class
+# of machine (see mt_threads() in config.py), so a handful of them sharing the
+# CPU's logical threads is a real win, not oversubscription stacked on
+# oversubscription - see Pipeline's docstring for the measurement.
+_FANOUT_WORKERS = max(2, min(4, os.cpu_count() or 2))
 
 
 @dataclass
@@ -42,12 +51,28 @@ class PipelineResult:
 
 
 class Pipeline:
-    """Single-threaded on purpose: one utterance at a time keeps peak RAM low
-    and avoids oversubscribing a 2-core CPU. Backpressure is handled upstream
-    by the bounded queue in MicrophoneSource.
+    """One utterance at a time, by design: that is what keeps peak RAM low and
+    backpressure simple, and it is unaffected by the change below. Backpressure
+    for utterances themselves is handled upstream by the bounded queue in
+    MicrophoneSource.
 
-    `translators` is an insertion-ordered dict of {target_code: Translator};
-    all run sequentially on each utterance. Adding a third target is one line.
+    Translating into every configured target WITHIN one utterance used to be
+    the single biggest cost in the whole pipeline once more than a few
+    languages were configured: looping translate() one language at a time
+    measured at 3.5-4+ seconds of pure translation time for a 14-language
+    default (nine ~100-200ms OPUS-MT calls plus one ~2.5-3s batched NLLB
+    call) - BEFORE speech recognition or synthesis. Worse, a language late in
+    that loop could miss the listener page's 6s wait-for-server-audio window,
+    so its phone gave up and spoke its own (often poor, for a low-resource
+    language) fallback voice instead - "sometimes no audio" was this same
+    queueing problem, not a separate bug.
+
+    Each translate() call already runs with intra_threads=1 on a 2-core/
+    4-thread machine (see mt_threads() in config.py), so running several
+    concurrently is real parallelism, not threads fighting over one core the
+    sequential version already had to itself.
+
+    `translators` is an insertion-ordered dict of {target_code: Translator}.
     """
 
     def __init__(self, transcriber: Transcriber, translators: dict[str, Translator],
@@ -62,6 +87,11 @@ class Pipeline:
         self.processed = 0
         self.skipped_empty = 0
         self.clipped = 0
+        self._pool = ThreadPoolExecutor(
+            max_workers=_FANOUT_WORKERS, thread_name_prefix="mt-fanout")
+
+    def close(self) -> None:
+        self._pool.shutdown(wait=False, cancel_futures=True)
 
     def process(self, utt: Utterance) -> PipelineResult | None:
         stt = self.transcriber.transcribe(utt.audio, self.sample_rate)
@@ -90,12 +120,14 @@ class Pipeline:
         # BEFORE translation, so the wrapper has to own the call. It loses the
         # batching win and keeps the overrides, which is the right trade.
         grouped: dict[int, list] = {}
+        grouped_codes: set[str] = set()
         for code, tr in self.translators.items():
             base = getattr(tr, "batch_base", None)
             if base is not None and hasattr(base, "translate_many"):
                 grouped.setdefault(id(base), []).append((code, tr, base))
+                grouped_codes.add(code)
 
-        for members in grouped.values():
+        def _run_group(members):
             base = members[0][2]
             tags = [tr.target_code for _, tr, _ in members]
             started = time.monotonic()
@@ -105,16 +137,25 @@ class Pipeline:
                 out = {}
             elapsed = time.monotonic() - started
             share = elapsed / max(len(members), 1)
-            for code, tr, _ in members:
-                translations[code] = out.get(tr.target_code, "")
-                mt_seconds[code] = share
+            return [(code, out.get(tr.target_code, ""), share) for code, tr, _ in members]
 
-        for code, tr in self.translators.items():
-            if code in translations:
-                continue
+        def _run_single(code, tr):
             r = tr.translate(stt.text)
-            translations[code] = r.text
-            mt_seconds[code] = r.compute_seconds
+            return [(code, r.text, r.compute_seconds)]
+
+        # Every group and every un-batched target translates concurrently -
+        # this fan-out, not any single call, was the bulk of per-utterance
+        # latency once more than a couple of languages were configured (see
+        # the class docstring). Each future still only does CPU-bound work in
+        # C++ (CTranslate2), so this is wall-clock parallelism, not just
+        # interleaving - the GIL is released for the duration of the call.
+        futures = [self._pool.submit(_run_group, members) for members in grouped.values()]
+        futures += [self._pool.submit(_run_single, code, tr)
+                    for code, tr in self.translators.items() if code not in grouped_codes]
+        for fut in futures:
+            for code, text, seconds in fut.result():
+                translations[code] = text
+                mt_seconds[code] = seconds
 
         result = PipelineResult(
             english=stt.text,

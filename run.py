@@ -604,6 +604,9 @@ def cmd_live(args) -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        pipeline.close()
+        if broadcast_sink is not None:
+            broadcast_sink.close()
         if speech_sink is not None:
             print("\n  Finishing speech playback...")
             speech_sink.close()

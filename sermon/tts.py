@@ -120,8 +120,15 @@ class VitsSpeaker(Speaker):
                 f"Missing {onnx}. Run: python scripts/fetch_models.py"
             )
 
+        # Several of these can now run concurrently (BroadcastSink fans out
+        # synthesis across languages) - onnxruntime's own default intra-op
+        # thread count would have each session reach for every core, so N
+        # concurrent sessions fight each other. One thread each, bounded by
+        # the sink's own worker pool, is well-behaved concurrency instead.
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = 1
         self.session = ort.InferenceSession(
-            str(onnx), providers=["CPUExecutionProvider"])
+            str(onnx), sess_options=opts, providers=["CPUExecutionProvider"])
         names = {i.name for i in self.session.get_inputs()}
         self.style = "coqui" if "input" in names else "mms"
 
