@@ -22,7 +22,7 @@ import urllib.request
 from pathlib import Path
 
 
-APP_TITLE = "Neo Sermon"
+APP_TITLE = "Neo Language Box"
 LOOPBACK_HOST = "127.0.0.1"
 PREFERRED_PORT = 8000
 WINDOW_WIDTH = 980
@@ -285,7 +285,7 @@ def _check_models(window, models: Path, status) -> bool:
 def _loading_page() -> str:
     return """<!doctype html>
 <meta charset="utf-8">
-<title>Loading Neo Sermon</title>
+<title>Loading Neo Language Box</title>
 <style>
   body { margin:0; background:#0b0b0b; color:#e0e0e0;
          font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -299,7 +299,7 @@ def _loading_page() -> str:
   @keyframes pulse { 0%%,100%%{opacity:0.3;} 50%%{opacity:1;} }
 </style>
 <div class="center">
-  <h1><span class="dot"></span>Starting Neo Sermon</h1>
+  <h1><span class="dot"></span>Starting Neo Language Box</h1>
   <p id="status">Loading speech and translation models. This can take a
      minute with every language enabled.</p>
 </div>
@@ -331,9 +331,9 @@ def _models_missing_page(models: Path, missing: list) -> str:
      does not have them.</p>
   <p>Missing:</p>
   <ul>{items}</ul>
-  <p class="path">Neo Sermon looked in:</p>
+  <p class="path">Neo Language Box looked in:</p>
   <p><code>{models}</code></p>
-  <p>Reinstalling Neo Sermon restores them. No internet is required.</p>
+  <p>Reinstalling Neo Language Box restores them. No internet is required.</p>
 </div>
 """
 
@@ -364,7 +364,7 @@ def _models_damaged_page(models: Path, report) -> str:
 </style>
 <div class="box">
   <h1>Some language model files did not copy correctly</h1>
-  <p>Neo Sermon checked every model file against the list it was shipped with,
+  <p>Neo Language Box checked every model file against the list it was shipped with,
      and these do not match. This usually means a download or copy was cut
      short. Starting anyway could produce wrong translations, so it has
      stopped here.</p>
@@ -372,7 +372,7 @@ def _models_damaged_page(models: Path, report) -> str:
   {more}
   <p>Copy those files again from the original into:</p>
   <p><code>{html.escape(str(models))}</code></p>
-  <p>Then start Neo Sermon again. Only the files listed need replacing.</p>
+  <p>Then start Neo Language Box again. Only the files listed need replacing.</p>
 </div>
 """
 

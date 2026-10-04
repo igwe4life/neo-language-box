@@ -35,17 +35,17 @@ from sermon.integrity import (MANIFEST_NAME, verify,  # noqa: E402
                               write_manifest)
 
 README = """\
-NEO SERMON - LANGUAGE MODELS
-============================
+NEO LANGUAGE BOX - LANGUAGE MODELS
+===================================
 
 WHERE THIS GOES
 Copy the `models` folder (the folder itself, not its contents) into the
-Neo Sermon install directory, normally:
+Neo Language Box install directory, normally:
 
-    %LOCALAPPDATA%\\NeoSermon\\models
+    %LOCALAPPDATA%\\NeoLanguageBox\\models
 
 Or keep it anywhere and set the environment variable SERMON_MODELS_DIR to its
-full path. On first launch Neo Sermon checks every file against
+full path. On first launch Neo Language Box checks every file against
 models-manifest.json and names anything missing or damaged in transit.
 
 WHAT IS IN IT AND WHERE IT CAME FROM

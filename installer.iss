@@ -1,12 +1,12 @@
-; Inno Setup script for Neo Sermon.
-; Wraps the PyInstaller bundle (dist/NeoSermon/) AND the language models into
-; a single .exe installer.
+; Inno Setup script for Neo Language Box.
+; Wraps the PyInstaller bundle (dist/NeoLanguageBox/) AND the language models
+; into a single .exe installer.
 ;
 ; Build, in order:
 ;   python -m PyInstaller --clean --noconfirm desktop.spec
 ;   python scripts/build_models_ship.py --clean
 ;   tools\innosetup\ISCC.exe installer.iss
-; Output:   dist/NeoSermonSetup.exe
+; Output:   dist/NeoLanguageBoxSetup.exe
 ;
 ; SIZE LIMIT - read before adding models
 ; --------------------------------------
@@ -31,11 +31,11 @@
 ; * Desktop + Start Menu shortcuts, both point at the .exe.
 ; * SetupIconFile omitted deliberately; installer uses a generic icon.
 
-#define AppName        "Neo Sermon"
-#define AppShortName   "NeoSermon"
+#define AppName        "Neo Language Box"
+#define AppShortName   "NeoLanguageBox"
 #define AppVersion     "0.8.0"
-#define AppPublisher   "Neo Sermon"
-#define AppExeName     "NeoSermon.exe"
+#define AppPublisher   "Neo Language Box"
+#define AppExeName     "NeoLanguageBox.exe"
 
 [Setup]
 ; Unchanged across the rename from "Sermon Translation Speaker". Windows keys
@@ -52,7 +52,7 @@ DisableProgramGroupPage=yes
 DisableDirPage=no
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-OutputBaseFilename=NeoSermonSetup
+OutputBaseFilename=NeoLanguageBoxSetup
 OutputDir=dist
 ; Compression is required for size (see the limit above), but these models are
 ; already quantised and only shrink 6-20% at any setting, so /max buys almost
@@ -63,9 +63,9 @@ SolidCompression=no
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#AppExeName}
 LicenseFile=
-; On a machine that already has the old install, this keeps using that folder
-; (SermonTranslation) so a models folder already copied there stays valid.
-; A fresh install gets the new NeoSermon folder.
+; On a machine that already has an old install, this keeps using that folder
+; (SermonTranslation, then NeoSermon) so a models folder already copied there
+; stays valid. A fresh install gets the new NeoLanguageBox folder.
 UsePreviousAppDir=yes
 CloseApplications=yes
 RestartApplications=no
@@ -81,7 +81,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 ; The PyInstaller-produced folder, verbatim.
-Source: "dist\NeoSermon\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\NeoLanguageBox\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; The language models: only what the app loads, as assembled by
 ; scripts/build_models_ship.py, including models-manifest.json so the app's
 ; first-launch integrity check covers the installed copy.
@@ -103,10 +103,11 @@ Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
 
 [InstallDelete]
-; The executable was renamed with the app. An upgrade over an older install
-; would otherwise leave the old SermonTranslationSpeaker.exe beside the new
-; one - still launchable, and running stale code.
+; The executable was renamed with the app, twice now. An upgrade over an
+; older install would otherwise leave the old exe beside the new one - still
+; launchable, and running stale code.
 Type: files; Name: "{app}\SermonTranslationSpeaker.exe"
+Type: files; Name: "{app}\NeoSermon.exe"
 
 [UninstallDelete]
 ; Runtime files the app creates alongside itself. sermon/tls.py writes the

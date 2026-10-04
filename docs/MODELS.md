@@ -1,6 +1,6 @@
 # Models
 
-Neo Sermon uses **no LLMs**. Nothing like GPT or Claude is involved, and nothing
+Neo Language Box uses **no LLMs**. Nothing like GPT or Claude is involved, and nothing
 leaves the machine. Every stage is a small single-purpose model running locally
 on CPU.
 

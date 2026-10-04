@@ -1,4 +1,4 @@
-# Neo Sermon
+# Neo Language Box
 
 Live interpretation into 13 languages, running entirely on one laptop.
 

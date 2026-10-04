@@ -828,7 +828,7 @@ async def _run_async(broadcaster: Broadcaster, binds: list[Bind],
                 ssl=b.ssl_ctx,
                 ping_interval=20, ping_timeout=20,
                 max_size=None,
-                server_header="neo-sermon",
+                server_header="neo-language-box",
             ))
             _LOGGER.info("listening on %s://%s:%d", b.scheme, b.host, b.port)
         broadcaster.bind_loop(asyncio.get_running_loop())
