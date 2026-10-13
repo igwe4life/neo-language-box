@@ -1,0 +1,248 @@
+<title>Neo Language Box Platform Brief</title>
+<meta name="description" content="A one-page technical overview of what Neo Language Box is built on, written for a management presentation.">
+<style>
+  /* layout: single centered column, header band, pipeline strip, stack sections, benefits callout, footer */
+  :root {
+    --bg: #f7f8fa;
+    --surface: #ffffff;
+    --border: #e2e6ec;
+    --text: #12151c;
+    --muted: #5b6472;
+    --accent: #1668d6;
+    --accent-soft: #eaf2ff;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b1220; --surface: #121b2e; --border: #223049;
+      --text: #eef2f8; --muted: #94a3b8; --accent: #4ea1ff; --accent-soft: rgba(78,161,255,.12);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b1220; --surface: #121b2e; --border: #223049;
+    --text: #eef2f8; --muted: #94a3b8; --accent: #4ea1ff; --accent-soft: rgba(78,161,255,.12);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+    padding: 40px 16px 64px;
+  }
+  .page {
+    max-width: 760px; margin: 0 auto;
+  }
+  h1, h2, h3 { text-wrap: balance; margin: 0; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  /* ---- header ---- */
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding-bottom: 22px; margin-bottom: 28px;
+    border-bottom: 1px solid var(--border);
+  }
+  .mark {
+    width: 46px; height: 46px; border-radius: 12px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--accent), #43c6ff);
+    display: grid; place-items: center;
+    font-weight: 700; color: #fff; font-size: 17px;
+  }
+  header h1 { font-size: 21px; font-weight: 700; letter-spacing: -.01em; }
+  header p { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
+
+  /* ---- intro ---- */
+  .intro { font-size: 15.5px; line-height: 1.65; color: var(--text); max-width: 62ch; }
+  .intro strong { color: var(--accent); }
+
+  /* ---- quick facts row ---- */
+  .facts {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+    background: var(--border); border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; margin: 26px 0;
+  }
+  .fact { background: var(--surface); padding: 14px 12px; }
+  .fact .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; }
+  .fact .v { font-size: 14px; font-weight: 600; margin-top: 4px; line-height: 1.3; }
+
+  /* ---- pipeline ---- */
+  .section-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .1em; font-weight: 700;
+    color: var(--accent); margin: 34px 0 12px;
+  }
+  .pipeline {
+    display: flex; align-items: stretch; gap: 0; flex-wrap: wrap;
+    border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    background: var(--surface);
+  }
+  .stage {
+    flex: 1 1 140px; padding: 14px 12px; position: relative;
+    border-right: 1px solid var(--border);
+  }
+  .stage:last-child { border-right: none; }
+  .stage .num { font-size: 10px; color: var(--muted); font-weight: 600; }
+  .stage .name { font-size: 13.5px; font-weight: 700; margin: 3px 0 5px; }
+  .stage .models { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+  .stage .models span { display: block; }
+
+  /* ---- stack list ---- */
+  .stack {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .row {
+    display: flex; gap: 14px; padding: 13px 14px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .row .label {
+    flex: 0 0 128px; font-size: 11.5px; font-weight: 700; color: var(--accent);
+    text-transform: uppercase; letter-spacing: .04em; padding-top: 1px;
+  }
+  .row .detail { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.55; }
+  .row .detail .tech { color: var(--text); font-weight: 600; }
+  .row .detail .note { color: var(--muted); }
+
+  /* ---- benefits ---- */
+  .benefits {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px;
+  }
+  .benefit {
+    background: var(--accent-soft); border-radius: 10px; padding: 14px;
+  }
+  .benefit .t { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .benefit .d { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+
+  footer {
+    margin-top: 36px; padding-top: 16px; border-top: 1px solid var(--border);
+    font-size: 11.5px; color: var(--muted);
+  }
+
+  @media (max-width: 560px) {
+    .facts { grid-template-columns: repeat(2, 1fr); }
+    .benefits { grid-template-columns: 1fr; }
+    .row { flex-direction: column; gap: 4px; }
+    .row .label { flex: none; }
+  }
+
+  /* A PDF page is fixed-size, not fluid like HTML - a phone's PDF viewer
+     auto-fits the whole page to its screen width, so the real lever for
+     on-phone legibility is FEWER COLUMNS (each cell gets more of that
+     fitted width), not smaller type. Font sizes below match the screen
+     version rather than shrinking further; this spills to two printed
+     pages instead of forcing everything onto one dense one. */
+  @media print {
+    @page { size: Letter; margin: 14mm; }
+    body { padding: 0; background: #fff; }
+    :root { --bg: #fff; }
+    header { margin-bottom: 18px; padding-bottom: 14px; }
+    .facts { grid-template-columns: repeat(2, 1fr); margin: 20px 0; }
+    .pipeline { flex-direction: column; }
+    .stage { border-right: none; border-bottom: 1px solid var(--border); flex: none; }
+    .stage:last-child { border-bottom: none; }
+    .benefits { grid-template-columns: 1fr; }
+    .row { break-inside: avoid; }
+    .benefit { break-inside: avoid; }
+    footer { margin-top: 22px; padding-top: 12px; }
+  }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+
+<div class="page">
+
+  <header>
+    <div class="mark">NL</div>
+    <div>
+      <h1>Neo Language Box</h1>
+      <p>Platform overview — prepared for management review</p>
+    </div>
+  </header>
+
+  <p class="intro">
+    Neo Language Box is a <strong>self-contained Windows desktop application</strong>
+    that listens to a live speaker and produces spoken and written translations in
+    real time, in multiple languages at once. It runs entirely on one laptop —
+    no cloud service, no internet connection, and no external AI subscription
+    required to operate.
+  </p>
+
+  <div class="facts">
+    <div class="fact"><div class="k">Runtime</div><div class="v">Python, packaged as a native .exe</div></div>
+    <div class="fact"><div class="k">Processing</div><div class="v">100% on-device</div></div>
+    <div class="fact"><div class="k">Internet</div><div class="v">Not required to run</div></div>
+    <div class="fact"><div class="k">Per-use cost</div><div class="v">$0 — no metered API calls</div></div>
+  </div>
+
+  <div class="section-label">How a sentence moves through the system</div>
+  <div class="pipeline">
+    <div class="stage">
+      <div class="num">01</div>
+      <div class="name">Capture</div>
+      <div class="models"><span>Room or system audio</span></div>
+    </div>
+    <div class="stage">
+      <div class="num">02</div>
+      <div class="name">Speech → Text</div>
+      <div class="models"><span>On-device recognition</span></div>
+    </div>
+    <div class="stage">
+      <div class="num">03</div>
+      <div class="name">Translate</div>
+      <div class="models"><span>Local translation engine</span></div>
+    </div>
+    <div class="stage">
+      <div class="num">04</div>
+      <div class="name">Text → Speech</div>
+      <div class="models"><span>Local voice synthesis</span></div>
+    </div>
+    <div class="stage">
+      <div class="num">05</div>
+      <div class="name">Deliver</div>
+      <div class="models"><span>Phones on venue Wi-Fi</span></div>
+    </div>
+  </div>
+
+  <div class="section-label">What's actually under the hood</div>
+  <div class="stack">
+    <div class="row">
+      <div class="label">Application</div>
+      <div class="detail"><span class="tech">Python desktop app</span> — <span class="note">built with PyInstaller and an Inno Setup installer. One .exe; no admin rights required to install.</span></div>
+    </div>
+    <div class="row">
+      <div class="label">Speech recognition</div>
+      <div class="detail"><span class="tech">Open-source speech-to-text models</span> — <span class="note">run locally on the laptop's own CPU, no cloud call involved.</span></div>
+    </div>
+    <div class="row">
+      <div class="label">Translation</div>
+      <div class="detail"><span class="tech">Specialised machine-translation models</span> — <span class="note">purpose-built for translation, not a general chatbot-style AI. Each language runs its own lightweight model.</span></div>
+    </div>
+    <div class="row">
+      <div class="label">Voice synthesis</div>
+      <div class="detail"><span class="tech">Offline text-to-speech models</span> — <span class="note">one trained voice per target language, also generated locally.</span></div>
+    </div>
+    <div class="row">
+      <div class="label">Delivery to listeners</div>
+      <div class="detail"><span class="tech">Local Wi-Fi + web server</span> — <span class="note">listeners open a link in their phone's own browser. Nothing to install on their end.</span></div>
+    </div>
+  </div>
+
+  <div class="section-label">Why this approach, not a cloud AI service</div>
+  <div class="benefits">
+    <div class="benefit">
+      <div class="t">Private by design</div>
+      <div class="d">Audio and translated text never leave the building — nothing is sent to a third-party server.</div>
+    </div>
+    <div class="benefit">
+      <div class="t">No recurring cost</div>
+      <div class="d">Translation and voice generation aren't metered. One install, no per-minute or per-word billing.</div>
+    </div>
+    <div class="benefit">
+      <div class="t">Works offline</div>
+      <div class="d">No dependency on venue internet quality or a vendor's uptime — it runs the same with no connection at all.</div>
+    </div>
+  </div>
+
+  <footer>
+    Prepared for an internal management presentation. Current build translates into 12 languages live (plus the original English), with more addable as voice models are validated.
+  </footer>
+
+</div>
