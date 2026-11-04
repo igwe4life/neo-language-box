@@ -102,7 +102,7 @@ a = Analysis(
         "sermon.audio", "sermon.config", "sermon.console",
         "sermon.diagnostics", "sermon.enlex", "sermon.integrity", "sermon.mt",
         "sermon.pipeline", "sermon.server", "sermon.sinks",
-        "sermon.stt", "sermon.tls", "sermon.tts",
+        "sermon.stt", "sermon.telemetry", "sermon.tls", "sermon.tts",
         "run",
     ],
     hookspath=[],

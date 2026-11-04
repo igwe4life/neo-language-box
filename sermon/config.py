@@ -10,6 +10,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MODELS_DIR = Path(os.environ.get("SERMON_MODELS_DIR", str(ROOT / "models")))
 
+# Single source of truth for the app version on the Python side. Inno Setup
+# cannot read this file at build time, so installer.iss's #define AppVersion
+# is kept in sync by hand - bump both together.
+APP_VERSION = "0.8.0"
+
 
 def auto_threads() -> int:
     """Leave one logical core free so the audio callback never starves.

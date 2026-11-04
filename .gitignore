@@ -16,3 +16,5 @@ android-listener/local.properties
 *.keystore
 models-ship/
 models-verified.json
+telemetry.json
+telemetry-server/telemetry.db

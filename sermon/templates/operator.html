@@ -548,6 +548,15 @@
         </div>
         <div class="url-preview" id="url-preview">&nbsp;</div>
       </div>
+      <div class="field">
+        <label class="check-row" for="in-telemetry" style="border-bottom:none">
+          <input id="in-telemetry" type="checkbox">
+          <span>Share anonymous usage stats</span>
+        </label>
+        <div class="modal-hint">Install count, country, and per-session peak listener
+          counts plus which languages were used - no audio, no transcript text, no names.
+          Applies right away, independent of the Save button above.</div>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="modal-btn ghost" id="copy-url-btn" type="button">Copy link</button>
@@ -975,8 +984,19 @@ $("settings-btn").addEventListener("click", async () => {
     const net = await (await fetch("/api/net")).json();
     if (net.lan && net.lan.length) lanOrigin = net.lan[0].url.replace(/\/$/, "");
   } catch {}
+  try {
+    const t = await (await fetch("/api/telemetry")).json();
+    $("in-telemetry").checked = !!t.enabled;
+  } catch {}
   updateUrlPreview();
   settingsModal.hidden = false;
+});
+$("in-telemetry").addEventListener("change", async (e) => {
+  // Applies immediately - a privacy toggle that silently waits for a
+  // separate Save click is the kind of thing that erodes trust in it.
+  try {
+    await fetch("/api/telemetry?enabled=" + (e.target.checked ? "1" : "0"), { method: "POST" });
+  } catch {}
 });
 $("save-session-btn").addEventListener("click", async () => {
   const qs = new URLSearchParams({

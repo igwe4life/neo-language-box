@@ -119,6 +119,10 @@ class Broadcaster:
         self.total_delivered = 0
         self.total_dropped = 0
         self.peak_clients = 0
+        # Unlike _client_lang (current connections only), this accumulates for
+        # the whole run - a listener who picked Yoruba and left five minutes
+        # ago should still count when the session-end telemetry ping is sent.
+        self.languages_ever_used: set = set()
         self.audio_bytes_served = 0
         self.audio_requests = 0
 
@@ -154,6 +158,7 @@ class Broadcaster:
     def set_client_language(self, ws: ServerConnection, lang: str) -> None:
         """Record what a listener selected. Drives which languages get audio."""
         self._client_lang[ws] = lang
+        self.languages_ever_used.add(lang)
 
     def active_languages(self) -> set:
         """Languages at least one connected listener has selected.
@@ -359,6 +364,8 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
                 "listeners": broadcaster.client_count,
                 "listener_langs": broadcaster.language_counts(),
                 "languages_active": len(broadcaster.languages),
+                "peak_listeners": broadcaster.peak_clients,
+                "languages_ever_used": sorted(broadcaster.languages_ever_used),
                 "uptime_seconds": round(broadcaster.uptime_seconds, 1),
                 "session": broadcaster.session_meta,
                 "listener_slug": broadcaster.listener_slug,
@@ -401,6 +408,18 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
                 broadcaster.listener_slug = slugify(raw, fallback="") if raw else ""
             body = json.dumps({"ok": True, "session": broadcaster.session_meta,
                                "listener_slug": broadcaster.listener_slug}).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
+            ]), body)
+        if path == "/api/telemetry":
+            from sermon import telemetry
+            if request.method == "POST":
+                from urllib.parse import parse_qs, urlparse
+                q = parse_qs(urlparse(request.path).query)
+                if "enabled" in q:
+                    telemetry.set_enabled(q["enabled"][0] == "1")
+            body = json.dumps({"ok": True, "enabled": telemetry.is_enabled()}).encode("utf-8")
             return Response(200, "OK", Headers([
                 ("Content-Type", "application/json"),
                 ("Content-Length", str(len(body))),

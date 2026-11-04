@@ -21,6 +21,10 @@ import time
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sermon import telemetry  # noqa: E402
+from sermon.config import APP_VERSION  # noqa: E402
+
 
 APP_TITLE = "Neo Language Box"
 LOOPBACK_HOST = "127.0.0.1"
@@ -184,6 +188,10 @@ def main() -> int:
     models = _resolve_models_dir()
     os.environ.setdefault("SERMON_MODELS_DIR", str(models))
 
+    # Fire-and-forget: sends at most one ping (install, or update if the
+    # version changed since last run), never blocks startup on it.
+    telemetry.check_install_or_update(APP_VERSION)
+
     missing = _missing_models(models)
     if missing:
         import webview
@@ -220,6 +228,31 @@ def main() -> int:
                 + json.dumps(text))
         except Exception:
             pass
+
+    def _on_closing() -> None:
+        # Last chance to read the broadcaster's own numbers before the
+        # process goes away - fetched over loopback HTTP rather than a
+        # direct reference, since the server runs in another thread via a
+        # separate `python run.py` entry point, not as an importable object
+        # here. `wait=True`: a background thread would just be killed along
+        # with everything else the instant this function returns.
+        try:
+            url = f"http://{LOOPBACK_HOST}:{LOOPBACK_PORT}/api/status"
+            with urllib.request.urlopen(url, timeout=2.0) as resp:
+                status = json.loads(resp.read().decode("utf-8"))
+        except Exception:
+            return      # server never came up, or is already gone - no session to report
+        peak = status.get("peak_listeners", 0)
+        if not peak:
+            return      # nobody ever listened; not worth a ping
+        telemetry.send_session_end(
+            peak_listeners=peak,
+            languages=status.get("languages_ever_used", []),
+            session_seconds=status.get("uptime_seconds", 0.0),
+            wait=True,
+        )
+
+    window.events.closing += _on_closing
 
     def _startup():
         # Verify BEFORE starting the server: a damaged model does not fail

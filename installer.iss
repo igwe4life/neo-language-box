@@ -33,6 +33,9 @@
 
 #define AppName        "Neo Language Box"
 #define AppShortName   "NeoLanguageBox"
+; Kept in sync by hand with sermon/config.py's APP_VERSION - Inno Setup
+; cannot read that file at build time. Bump both together, and update
+; telemetry-server/manifest.json's app_version too so update pings fire.
 #define AppVersion     "0.8.0"
 #define AppPublisher   "Neo Language Box"
 #define AppExeName     "NeoLanguageBox.exe"
@@ -117,4 +120,7 @@ Type: files; Name: "{app}\NeoSermon.exe"
 Type: filesandordirs; Name: "{app}\_internal\certs"
 Type: filesandordirs; Name: "{app}\certs"
 Type: files; Name: "{app}\models-verified.json"
+; sermon/telemetry.py's install id and opt-out flag, same two-levels-up
+; reasoning as the certs above.
+Type: files; Name: "{app}\_internal\telemetry.json"
 ; The bundled models are installer-owned files, so uninstalling removes them.
