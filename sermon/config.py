@@ -179,10 +179,12 @@ LANGUAGES = {
     "id": {"native": "Bahasa Indonesia", "flag": "\U0001F1EE\U0001F1E9", "speech": "id-ID"},
     "tr": {"native": "Türkçe",    "flag": "\U0001F1F9\U0001F1F7", "speech": "tr-TR"},
     "pl": {"native": "Polski",    "flag": "\U0001F1F5\U0001F1F1", "speech": "pl-PL"},
+    "bn": {"native": "বাংলা",      "flag": "\U0001F1E7\U0001F1E9", "speech": "bn-BD"},
+    "ur": {"native": "اردو",       "flag": "\U0001F1F5\U0001F1F0", "speech": "ur-PK", "rtl": True},
 }
 
 DEFAULT_TARGETS = ["fr", "es", "pt", "de", "it", "ru", "ar", "hi", "zh",
-                   "sw", "yo", "ha", "ko", "vi", "id", "tr", "pl"]
+                   "sw", "yo", "ha", "ko", "vi", "id", "tr", "pl", "bn", "ur"]
 # Igbo is pulled from the default set temporarily at the project owner's
 # request (2026-10-04): investigating reports of it sounding wrong in the
 # field. The model, config entry and NLLB_TARGETS/VITS_VOICES mapping below
@@ -202,6 +204,8 @@ NLLB_TARGETS = {
     "sw": "swh_Latn",
     "pl": "pol_Latn",   # no official direct or tc-big OPUS-MT en->pl release
     "ko": "kor_Hang",   # only OPUS-MT release is tc-big, BLEU 13.7 - modest
+    "bn": "ben_Beng",   # no official direct/tc-big OPUS-MT release
+    "ur": "urd_Arab",   # direct OPUS-MT release exists but BLEU 12.1/chrF .39
 }
 
 # Voices that are plain VITS ONNX rather than Piper bundles, keyed by the
@@ -255,6 +259,8 @@ ALL_VOICES = {
     "id": "id_ID-news_tts-medium",
     "tr": "tr_TR-dfki-medium",
     "pl": "pl_PL-darkman-medium",
+    "bn": "bn_BD-google-medium",
+    "ur": "ur_PK-fasih-medium",
     # No English voice on purpose: the room can already hear the speaker.
     # English listeners get the live transcript as text.
     #

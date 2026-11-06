@@ -123,6 +123,8 @@ PIPER_VOICES = {
     "id_ID-news_tts-medium": f"{_PIPER_BASE}/id/id_ID/news_tts/medium/id_ID-news_tts-medium.onnx",
     "tr_TR-dfki-medium":     f"{_PIPER_BASE}/tr/tr_TR/dfki/medium/tr_TR-dfki-medium.onnx",
     "pl_PL-darkman-medium":  f"{_PIPER_BASE}/pl/pl_PL/darkman/medium/pl_PL-darkman-medium.onnx",
+    "bn_BD-google-medium":   f"{_PIPER_BASE}/bn/bn_BD/google/medium/bn_BD-google-medium.onnx",
+    "ur_PK-fasih-medium":    f"{_PIPER_BASE}/ur/ur_PK/fasih/medium/ur_PK-fasih-medium.onnx",
 }
 
 # Non-Piper VITS voices, for languages Piper has none. Same onnxruntime, a
