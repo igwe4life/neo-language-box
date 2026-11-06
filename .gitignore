@@ -20,3 +20,4 @@ telemetry.json
 telemetry-server/telemetry.db
 telemetry-server/packs/
 language-packs.json
+.claude/settings.local.json
