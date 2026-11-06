@@ -93,6 +93,19 @@
   @media (max-width: 560px) {
     .grid2 { grid-template-columns: 1fr; }
   }
+
+  /* A PDF page is fixed-size - a phone's viewer auto-fits the whole page
+     to its screen width, so single-column (more of that fitted width per
+     tile) beats smaller type for on-phone legibility. See the platform
+     brief for the same reasoning. */
+  @media print {
+    @page { size: Letter; margin: 14mm; }
+    body { background: #fff; }
+    :root { --bg: #fff; }
+    .grid2 { grid-template-columns: 1fr; }
+    .card, .tile, .warn { break-inside: avoid; }
+    h2 { break-after: avoid; }
+  }
 </style>
 </head>
 <body>
