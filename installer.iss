@@ -63,6 +63,14 @@ OutputDir=dist
 ; Non-solid keeps memory use sane across 4 GB of input.
 Compression=lzma2
 SolidCompression=no
+; 20 languages pushed raw models past ~5 GB; measured LZMA2 ratio on these
+; already-quantised model.bin files is ~0.91 (barely compresses), so a
+; single Setup.exe would exceed Inno's 4.2 GB hard limit - this is the
+; DiskSpanning path the comment at the top of this file anticipated.
+; Setup.exe plus the .bin slices must all be kept together and shipped as
+; a set; the installer itself asks for the next one as it needs it.
+DiskSpanning=yes
+DiskSliceSize=2000000000
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#AppExeName}
 LicenseFile=
