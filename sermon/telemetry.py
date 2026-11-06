@@ -28,11 +28,9 @@ from .config import APP_VERSION, ROOT
 
 STATE_PATH = ROOT / "telemetry.json"
 
-# Set this to wherever telemetry-server/ ends up hosted. Blank means
-# telemetry is a silent no-op - nothing is sent, nothing is checked, and
-# startup/shutdown are not slowed down trying to reach a server that
-# doesn't exist yet.
-SERVER_URL = ""
+# telemetry-server/, deployed on Fly.io (telemetry-server/fly.toml). Blank
+# would make telemetry a silent no-op instead - see check_install_or_update.
+SERVER_URL = "https://neo-language-box-telemetry.fly.dev"
 
 _TIMEOUT = 3.0
 
