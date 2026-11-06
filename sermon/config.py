@@ -185,13 +185,21 @@ LANGUAGES = {
 }
 
 DEFAULT_TARGETS = ["fr", "es", "pt", "de", "it", "ru", "ar", "hi", "zh",
-                   "sw", "ig", "yo", "ha", "ko", "vi", "id", "tr", "pl", "bn", "ur"]
+                   "sw", "ig", "yo", "ha", "id", "tr", "pl", "bn", "ur"]
 # Igbo was pulled from the default set 2026-10-04 while investigating reports
 # of it sounding wrong in the field, and restored 2026-11-06 after the actual
 # cause (BroadcastSink.emit() blocking the pipeline on synthesis - see the
 # 2026-10-04 commit fixing that) was found and fixed. Re-tested via
 # `python run.py doctor` on restoring it; watch for a recurrence of the
 # original symptoms (a wrong voice cutting in, hangs) under real load.
+#
+# Korean and Vietnamese are pulled from the default set 2026-11-06, the
+# first real test of the language-pack system (sermon/langpacks.py): both
+# remain fully configured below (LANGUAGES/ALL_VOICES/NLLB_TARGETS) and
+# both already have a built, uploaded, working pack - see
+# telemetry-server/manifest.json and scripts/build_language_pack.py. A
+# fresh install no longer bundles either; downloading the pack is now the
+# only way to get them, same as any language added from here on.
 
 # Targets served by NLLB-200 rather than a bilingual OPUS-MT model, mapped to
 # NLLB's own language tags. OPUS-MT does publish models for all four, but they

@@ -83,8 +83,12 @@ def required(models: Path) -> list:
     ]
     rels += [Path("mt") / f"opus-mt-en-{t}"
              for t in DEFAULT_TARGETS if t not in NLLB_TARGETS]
-    rels += [Path("tts") / name for name in ALL_VOICES.values()]
-    rels += [Path("tts") / name for name in VITS_VOICES.values()]
+    # Filtered by DEFAULT_TARGETS, not "every voice that exists": a language
+    # pulled from the default set (shipped only as a downloadable pack - see
+    # sermon/langpacks.py) must not have its voice baked into the installer
+    # anyway, or there would be nothing left for the pack to actually add.
+    rels += [Path("tts") / ALL_VOICES[code] for code in ALL_VOICES if code in DEFAULT_TARGETS]
+    rels += [Path("tts") / VITS_VOICES[code] for code in VITS_VOICES if code in DEFAULT_TARGETS]
     return rels
 
 
