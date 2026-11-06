@@ -1,5 +1,22 @@
 {
   "app_version": "0.8.0",
   "app_download_url": "",
-  "language_packs": []
+  "language_packs": [
+    {
+      "code": "ko",
+      "name": "한국어",
+      "version": "1",
+      "url": "/v1/packs/ko-v1.zip",
+      "sha256": "249f5f923756b0e84b18b2593176e1ff98f82d645834e1889b3080a6d61019b6",
+      "size_bytes": 63227568
+    },
+    {
+      "code": "vi",
+      "name": "Tiếng Việt",
+      "version": "1",
+      "url": "/v1/packs/vi-v1.zip",
+      "sha256": "8f34c366613dd1deacacd5af5da4b6af6f89ca57f6d1953e04a89e5c425b40a1",
+      "size_bytes": 142590051
+    }
+  ]
 }

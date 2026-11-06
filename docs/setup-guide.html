@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neo Language Box Setup Guide</title>
+<meta name="description" content="How to install Neo Language Box, run a first service, and get listeners connected.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  /* layout: single column guide, numbered step cards, sticky section nav on wide screens */
+  :root {
+    --bg: #f7f8fa; --surface: #ffffff; --border: #e2e6ec;
+    --text: #12151c; --muted: #5b6472; --accent: #1668d6; --accent-soft: #eaf2ff;
+    --warn-bg: #fff6e8; --warn-border: #f0d9a8; --warn-text: #7a5308;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b1220; --surface: #121b2e; --border: #223049;
+      --text: #eef2f8; --muted: #94a3b8; --accent: #4ea1ff; --accent-soft: rgba(78,161,255,.12);
+      --warn-bg: rgba(240,180,60,.1); --warn-border: rgba(240,180,60,.35); --warn-text: #e8c074;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b1220; --surface: #121b2e; --border: #223049;
+    --text: #eef2f8; --muted: #94a3b8; --accent: #4ea1ff; --accent-soft: rgba(78,161,255,.12);
+    --warn-bg: rgba(240,180,60,.1); --warn-border: rgba(240,180,60,.35); --warn-text: #e8c074;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.6;
+  }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 36px 16px 80px; }
+
+  header.top {
+    display: flex; align-items: center; gap: 14px; padding-bottom: 20px;
+    margin-bottom: 30px; border-bottom: 1px solid var(--border);
+  }
+  .mark {
+    width: 42px; height: 42px; border-radius: 11px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--accent), #43c6ff);
+    display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 15px;
+  }
+  header.top h1 { font-size: 19px; margin: 0; }
+  header.top p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+
+  h2 { font-size: 20px; margin: 44px 0 6px; text-wrap: balance; }
+  h2 .num {
+    display: inline-grid; place-items: center; width: 26px; height: 26px;
+    border-radius: 50%; background: var(--accent); color: #fff;
+    font-size: 13px; font-weight: 700; margin-right: 9px; vertical-align: -5px;
+  }
+  h3 { font-size: 14.5px; margin: 20px 0 8px; }
+  p { font-size: 14.5px; color: var(--text); }
+  p.lede { color: var(--muted); margin-top: 0; }
+  ol, ul { padding-left: 22px; font-size: 14.5px; }
+  li { margin-bottom: 9px; }
+  li::marker { color: var(--accent); font-weight: 600; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px; margin: 14px 0;
+  }
+  .files {
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .file-row {
+    display: flex; align-items: center; gap: 10px; font-size: 13.5px;
+  }
+  .file-row .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+
+  .warn {
+    background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text);
+    border-radius: 10px; padding: 12px 14px; font-size: 13.5px; margin: 14px 0;
+  }
+  .warn strong { display: block; margin-bottom: 3px; color: var(--warn-text); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 13px 15px; }
+  .tile .t { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .tile .d { font-size: 12.5px; color: var(--muted); }
+
+  code { background: var(--accent-soft); color: var(--accent); border-radius: 5px; padding: 1.5px 6px; font-size: 13px; font-family: "IBM Plex Mono", monospace; }
+
+  footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+
+  @media (max-width: 560px) {
+    .grid2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="mark">NL</div>
+    <div>
+      <h1>Neo Language Box</h1>
+      <p>Setup guide - install, first service, getting listeners connected</p>
+    </div>
+  </header>
+
+  <h2><span class="num">1</span>What you need</h2>
+  <p class="lede">The installer ships as four files. All four have to sit in the <strong>same folder</strong> before you run anything - the installer reads the others as it goes.</p>
+  <div class="card">
+    <div class="files">
+      <div class="file-row"><span class="dot"></span><span class="mono">NeoLanguageBoxSetup.exe</span> <span style="color:var(--muted)">- run this one</span></div>
+      <div class="file-row"><span class="dot"></span><span class="mono">NeoLanguageBoxSetup-1.bin</span></div>
+      <div class="file-row"><span class="dot"></span><span class="mono">NeoLanguageBoxSetup-2.bin</span></div>
+      <div class="file-row"><span class="dot"></span><span class="mono">NeoLanguageBoxSetup-3.bin</span> <span style="color:var(--muted)">- these three travel with it</span></div>
+    </div>
+  </div>
+  <p>Put all four in one folder (a fresh folder on the Desktop is fine), then double-click <code>NeoLanguageBoxSetup.exe</code>. If the <code>.bin</code> files aren't beside it, the install will stop partway through and tell you one is missing.</p>
+
+  <h2><span class="num">2</span>Installing</h2>
+  <ol>
+    <li>Windows may show a blue "Windows protected your PC" screen the first time, since this isn't a signed, store-published app. Click <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
+    <li>The installer doesn't need admin rights and doesn't ask for them. Click through the wizard - the defaults are fine for almost everyone.</li>
+    <li>Leave the desktop shortcut option checked unless you'd rather launch it from the Start Menu only.</li>
+    <li>Click <strong>Install</strong>. This copies about 5 GB, so it can take a few minutes depending on the machine.</li>
+  </ol>
+  <div class="warn">
+    <strong>Already have an older version installed?</strong>
+    This installs as an upgrade over it automatically - same shortcuts, same install folder, old leftover files cleaned up. You don't need to uninstall first.
+  </div>
+
+  <h2><span class="num">3</span>First launch</h2>
+  <p>The app opens to a loading screen while it checks every language model file against the list it shipped with. On a normal first run this takes well under a minute.</p>
+  <div class="grid2">
+    <div class="tile">
+      <div class="t">If it just works</div>
+      <div class="d">You'll land on the main dashboard automatically. Nothing else to do here - skip to step 4.</div>
+    </div>
+    <div class="tile">
+      <div class="t">If it says files are missing or damaged</div>
+      <div class="d">It'll name exactly which ones. This usually means the install was interrupted or copied incompletely - reinstalling fixes it.</div>
+    </div>
+  </div>
+  <p>Windows Firewall may ask for permission the first time the app starts its server - click <strong>Allow</strong>. If you click Deny by mistake, phones on the Wi-Fi won't be able to reach it.</p>
+
+  <h2><span class="num">4</span>The dashboard, quickly</h2>
+  <p class="lede">Everything you need during a service lives on one screen.</p>
+  <div class="grid2">
+    <div class="tile"><div class="t">Audio Source</div><div class="d">Pick "System Audio" to capture whatever the room's sound system plays, or a specific microphone.</div></div>
+    <div class="tile"><div class="t">Control</div><div class="d">The big button starts and pauses listening. Nothing is translated while paused.</div></div>
+    <div class="tile"><div class="t">Live Transcription</div><div class="d">Shows what's being heard and translated in real time, so you can confirm it's working before anyone's listening.</div></div>
+    <div class="tile"><div class="t">Connected Listeners</div><div class="d">A live count of phones currently on the listener page.</div></div>
+  </div>
+  <h3>Settings (the gear icon)</h3>
+  <ul>
+    <li><strong>Event name</strong> - shown as the headline on the listener page itself (e.g. "Sunday Service").</li>
+    <li><strong>Listener URL</strong> - the short link you'll share, like <code>/neo/your-event</code>. Auto-filled from the event name, or set your own.</li>
+    <li><strong>Share anonymous usage stats</strong> - on by default. Sends an install count and per-service listener numbers, nothing else. Turn it off here any time.</li>
+  </ul>
+  <h3>Manage Languages</h3>
+  <p>Turn individual languages on or off for this service. Fewer active languages means less work per sentence, which can help on an older laptop.</p>
+
+  <h2><span class="num">5</span>Getting listeners connected</h2>
+  <ol>
+    <li>Click the QR code icon to bring up a code for the current listener URL. Point it at a screen, or share the link directly.</li>
+    <li>A listener scans it or opens the link on their own phone - no app to install, it opens in their regular browser.</li>
+    <li>They pick their language once; it's remembered on that phone for next time.</li>
+  </ol>
+  <div class="warn">
+    <strong>Phones will show a "not secure" warning the first time they visit.</strong>
+    That's expected - the app generates its own certificate so the connection is still encrypted on your Wi-Fi, it's just not from a public certificate authority. Tell listeners to tap <strong>Advanced</strong>, then <strong>Proceed anyway</strong> (wording varies slightly by phone). They only see this once per phone.
+  </div>
+  <p>Listeners are on the same Wi-Fi network as the laptop running Neo Language Box - there's no internet requirement for the translation itself to work.</p>
+
+  <h2><span class="num">6</span>If something's not working</h2>
+  <div class="grid2">
+    <div class="tile"><div class="t">Phones can't reach the listener page</div><div class="d">Check the Windows Firewall prompt was allowed. Confirm phones are on the same Wi-Fi network as the laptop, not a guest network that isolates devices from each other.</div></div>
+    <div class="tile"><div class="t">No audio, text only</div><div class="d">Listeners can mute/unmute from the page itself. If a specific language has no voice yet, that listener gets text plus their own phone's built-in voice automatically - not a bug.</div></div>
+    <div class="tile"><div class="t">A listener reports a problem</div><div class="d">They can flag it directly from their phone (the flag icon on the listener page) - wrong translation, bad audio, or something else. It shows up on your dashboard.</div></div>
+    <div class="tile"><div class="t">Translation looks stuck</div><div class="d">Check Control isn't paused, and that Audio Source matches where the sound is actually coming from.</div></div>
+  </div>
+
+  <h2><span class="num">7</span>Uninstalling</h2>
+  <p>Use Windows' own <strong>Settings &gt; Apps</strong>, or the shortcut in the Start Menu folder. This removes the app and its language models; nothing is left behind.</p>
+
+  <footer>
+    Neo Language Box - setup guide
+  </footer>
+
+</div>
+</body>
+</html>

@@ -18,3 +18,5 @@ models-ship/
 models-verified.json
 telemetry.json
 telemetry-server/telemetry.db
+telemetry-server/packs/
+language-packs.json

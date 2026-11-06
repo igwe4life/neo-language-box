@@ -265,6 +265,42 @@ import re as _re
 
 _AUDIO_PATH = _re.compile(r"^/audio/(\d+)\.([a-z]{2})\.([a-z0-9]+)$")
 
+# One operator dashboard per machine, so plain module-level state is enough -
+# the same reasoning as broadcaster.reports. Keyed by language code; a
+# finished or failed job stays here (not cleared) so the dashboard can show
+# its outcome until the operator dismisses it or starts another install.
+_langpack_jobs: dict = {}
+_langpack_jobs_lock = threading.Lock()
+
+
+def _start_langpack_install(code: str) -> dict:
+    from sermon import langpacks
+
+    with _langpack_jobs_lock:
+        existing = _langpack_jobs.get(code)
+        if existing and existing.get("state") == "running":
+            return {"ok": False, "error": "already installing"}
+        _langpack_jobs[code] = {"state": "running", "done": 0, "total": 0, "error": None}
+
+    def _progress(done: int, total: int) -> None:
+        with _langpack_jobs_lock:
+            _langpack_jobs[code].update(done=done, total=total)
+
+    def _run() -> None:
+        try:
+            langpacks.install(code, progress=_progress)
+            with _langpack_jobs_lock:
+                _langpack_jobs[code]["state"] = "done"
+        except langpacks.LangPackError as exc:
+            with _langpack_jobs_lock:
+                _langpack_jobs[code].update(state="error", error=str(exc))
+        except Exception as exc:                      # never kill the thread silently
+            with _langpack_jobs_lock:
+                _langpack_jobs[code].update(state="error", error=f"Unexpected error: {exc}")
+
+    threading.Thread(target=_run, daemon=True, name=f"langpack-{code}").start()
+    return {"ok": True, "state": "running"}
+
 
 def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None):
     async def _process_request(connection: ServerConnection, request):
@@ -408,6 +444,23 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
                 broadcaster.listener_slug = slugify(raw, fallback="") if raw else ""
             body = json.dumps({"ok": True, "session": broadcaster.session_meta,
                                "listener_slug": broadcaster.listener_slug}).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
+            ]), body)
+        if path == "/api/langpacks" and request.method != "POST":
+            from sermon import langpacks
+            with _langpack_jobs_lock:
+                jobs = {code: dict(job) for code, job in _langpack_jobs.items()}
+            body = json.dumps({"packs": langpacks.available_packs(), "jobs": jobs}).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
+            ]), body)
+        if path.startswith("/api/langpacks/") and request.method == "POST":
+            code = path[len("/api/langpacks/"):]
+            resp = _start_langpack_install(code)
+            body = json.dumps(resp).encode("utf-8")
             return Response(200, "OK", Headers([
                 ("Content-Type", "application/json"),
                 ("Content-Length", str(len(body))),

@@ -17,9 +17,18 @@
    because nothing it shows is sensitive - but see the README before
    putting this on a host you don't want it guessed to by URL alone.
 
-Storage is one SQLite file. At this data volume (a ping every so often from
-every install, not every request on every page load) SQLite is not a
-simplification made to cut corners - it is sized correctly for the job.
+4. GET /v1/packs/<file> - serves the actual language-pack zip files (built
+   by scripts/build_language_pack.py) from PACKS_DIR. This was meant to be
+   a separate static host - see telemetry-server/README.md - but nothing
+   else was set up yet, and these packs are modest (tens to a couple
+   hundred MB), not the multi-GB the installer itself deals with, so they
+   live on this server's own volume for now. Revisit if that stops being
+   true.
+
+Storage is one SQLite file plus, now, a directory of zip files. At this
+data volume (a ping every so often from every install, not every request
+on every page load) SQLite is not a simplification made to cut corners -
+it is sized correctly for the job.
 """
 
 from __future__ import annotations
@@ -34,13 +43,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("TELEMETRY_DB", ROOT / "telemetry.db"))
 MANIFEST_PATH = Path(os.environ.get("TELEMETRY_MANIFEST", ROOT / "manifest.json"))
+PACKS_DIR = Path(os.environ.get("TELEMETRY_PACKS_DIR", ROOT / "packs"))
 
 app = FastAPI(title="Neo Language Box telemetry", docs_url=None, redoc_url=None)
 
@@ -170,6 +180,21 @@ async def manifest() -> JSONResponse:
     except FileNotFoundError:
         data = {"app_version": "0.0.0", "language_packs": []}
     return JSONResponse(data)
+
+
+# --------------------------------------------------------------------- /v1/packs
+
+@app.get("/v1/packs/{filename}")
+async def pack(filename: str) -> FileResponse:
+    # filename comes straight off the URL path - reject anything that
+    # isn't a bare filename before it ever touches the filesystem, so a
+    # path like "../../etc/passwd" can't escape PACKS_DIR.
+    if "/" in filename or "\\" in filename or filename in (".", ".."):
+        raise HTTPException(404)
+    path = PACKS_DIR / filename
+    if not path.is_file():
+        raise HTTPException(404)
+    return FileResponse(path, media_type="application/zip", filename=filename)
 
 
 # ------------------------------------------------------------------- /v1/stats

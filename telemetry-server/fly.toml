@@ -9,6 +9,7 @@ primary_region = 'iad'
 [build]
 [env]
   TELEMETRY_DB = '/data/telemetry.db'
+  TELEMETRY_PACKS_DIR = '/data/packs'
 
 [[mounts]]
   source = 'data'

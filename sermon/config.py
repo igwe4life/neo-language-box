@@ -3,6 +3,7 @@ in the pipeline itself."""
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -229,6 +230,24 @@ class MTConfig:
         return self.targets[0] if self.targets else "fr"
 
 
+LANGUAGE_PACKS_FILE = ROOT / "language-packs.json"
+
+
+def installed_language_packs() -> list[str]:
+    """Languages added after install via sermon/langpacks.py, not baked into
+    this build. A code only lands here once its pack has been downloaded,
+    verified and unzipped - this file is the record of that, written by
+    langpacks.install(), read here so a restart picks it up with no code
+    change. A code must already exist in LANGUAGES (fully configured, just
+    not shipped by default) - a pack can activate a known-but-dormant
+    language, not introduce one this build has never heard of."""
+    try:
+        data = json.loads(LANGUAGE_PACKS_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+    return [c for c in data if c in LANGUAGES]
+
+
 def _targets_from_env() -> list[str]:
     """Translation targets, optionally narrowed by SERMON_TARGETS.
 
@@ -237,7 +256,11 @@ def _targets_from_env() -> list[str]:
     """
     raw = (os.environ.get("SERMON_TARGETS") or "").strip()
     if not raw:
-        return list(DEFAULT_TARGETS)
+        base = list(DEFAULT_TARGETS)
+        for code in installed_language_packs():
+            if code not in base:
+                base.append(code)
+        return base
     picked = [c.strip().lower() for c in raw.split(",") if c.strip()]
     picked = [c for c in picked if c in LANGUAGES and c != SOURCE_LANG]
     return picked or list(DEFAULT_TARGETS)
