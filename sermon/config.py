@@ -168,10 +168,21 @@ LANGUAGES = {
     "ig": {"native": "Igbo",     "flag": "\U0001F1F3\U0001F1EC", "speech": "ig-NG"},
     "yo": {"native": "Yorùbá",   "flag": "\U0001F1F3\U0001F1EC", "speech": "yo-NG"},
     "ha": {"native": "Hausa",    "flag": "\U0001F1F3\U0001F1EC", "speech": "ha-NG"},
+
+    # --- fourth language wave: same proven path as fr/es/.../sw above -
+    # a Piper voice plus either OPUS-MT or NLLB-200 for translation, no
+    # one-off model engineering. Re-pulled from the reverted 25-language
+    # expansion (2026-10-01), where each of these five was individually
+    # verified against the live Piper/OPUS-MT listings before being added.
+    "ko": {"native": "한국어",      "flag": "\U0001F1F0\U0001F1F7", "speech": "ko-KR"},
+    "vi": {"native": "Tiếng Việt", "flag": "\U0001F1FB\U0001F1F3", "speech": "vi-VN"},
+    "id": {"native": "Bahasa Indonesia", "flag": "\U0001F1EE\U0001F1E9", "speech": "id-ID"},
+    "tr": {"native": "Türkçe",    "flag": "\U0001F1F9\U0001F1F7", "speech": "tr-TR"},
+    "pl": {"native": "Polski",    "flag": "\U0001F1F5\U0001F1F1", "speech": "pl-PL"},
 }
 
 DEFAULT_TARGETS = ["fr", "es", "pt", "de", "it", "ru", "ar", "hi", "zh",
-                   "sw", "yo", "ha"]
+                   "sw", "yo", "ha", "ko", "vi", "id", "tr", "pl"]
 # Igbo is pulled from the default set temporarily at the project owner's
 # request (2026-10-04): investigating reports of it sounding wrong in the
 # field. The model, config entry and NLLB_TARGETS/VITS_VOICES mapping below
@@ -189,6 +200,8 @@ NLLB_TARGETS = {
     "yo": "yor_Latn",
     "ha": "hau_Latn",
     "sw": "swh_Latn",
+    "pl": "pol_Latn",   # no official direct or tc-big OPUS-MT en->pl release
+    "ko": "kor_Hang",   # only OPUS-MT release is tc-big, BLEU 13.7 - modest
 }
 
 # Voices that are plain VITS ONNX rather than Piper bundles, keyed by the
@@ -237,6 +250,11 @@ ALL_VOICES = {
     "hi": "hi_IN-pratham-medium",
     "zh": "zh_CN-huayan-medium",
     "sw": "sw_CD-lanfrica-medium",
+    "ko": "ko_KR-kss-medium",
+    "vi": "vi_VN-vais1000-medium",
+    "id": "id_ID-news_tts-medium",
+    "tr": "tr_TR-dfki-medium",
+    "pl": "pl_PL-darkman-medium",
     # No English voice on purpose: the room can already hear the speaker.
     # English listeners get the live transcript as text.
     #

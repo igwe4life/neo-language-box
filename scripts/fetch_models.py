@@ -77,6 +77,16 @@ OPUS_MT_URLS = {
     "ha": "https://object.pouta.csc.fi/OPUS-MT-models/en-ha/opus+bt-2020-05-23.zip",
     "zu": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-zul/opus+bt-2021-03-12.zip",
     "sw": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-swa/opus+bt-2021-04-10.zip",
+
+    # --- fourth language wave --------------------------------------------
+    # Korean and Polish are NOT here: no good direct OPUS-MT release exists
+    # for either - see NLLB_TARGETS in config.py.
+    "vi": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-vie/opus+bt-2021-04-10.zip",
+    "id": "https://object.pouta.csc.fi/OPUS-MT-models/en-id/opus-2019-12-18.zip",
+    # The "tc-big" release: a larger transformer with meaningfully better
+    # BLEU than the standard release, picked deliberately for translation
+    # quality even though the download is ~830 MB rather than ~260 MB.
+    "tr": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-tur/opusTCv20210807+bt_transformer-big_2022-02-25.zip",
 }
 
 # Piper TTS voices. ~60 MB each; runs on the onnxruntime we already have.
@@ -105,6 +115,14 @@ PIPER_VOICES = {
     # Swahili is the only one of the African targets Piper covers. Igbo,
     # Yoruba and Hausa use VITS voices instead - see MMS_VOICES below.
     "sw_CD-lanfrica-medium": f"{_PIPER_BASE}/sw/sw_CD/lanfrica/medium/sw_CD-lanfrica-medium.onnx",
+
+    # --- fourth language wave ---------------------------------------------
+    # Checked against the live rhasspy/piper-voices file tree before adding.
+    "ko_KR-kss-medium":      f"{_PIPER_BASE}/ko/ko_KR/kss/medium/ko_KR-kss-medium.onnx",
+    "vi_VN-vais1000-medium": f"{_PIPER_BASE}/vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium.onnx",
+    "id_ID-news_tts-medium": f"{_PIPER_BASE}/id/id_ID/news_tts/medium/id_ID-news_tts-medium.onnx",
+    "tr_TR-dfki-medium":     f"{_PIPER_BASE}/tr/tr_TR/dfki/medium/tr_TR-dfki-medium.onnx",
+    "pl_PL-darkman-medium":  f"{_PIPER_BASE}/pl/pl_PL/darkman/medium/pl_PL-darkman-medium.onnx",
 }
 
 # Non-Piper VITS voices, for languages Piper has none. Same onnxruntime, a
