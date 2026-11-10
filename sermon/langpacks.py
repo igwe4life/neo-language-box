@@ -17,13 +17,14 @@ import hashlib
 import json
 import shutil
 import tempfile
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Callable, Optional
 
 from .config import LANGUAGE_PACKS_FILE, LANGUAGES, ROOT
-from .telemetry import SERVER_URL, check_manifest
+from .telemetry import SERVER_URL, check_manifest, get_install_id
 
 Progress = Optional[Callable[[int, int], None]]      # (bytes_done, bytes_total)
 
@@ -131,6 +132,56 @@ def _verify(zip_path: Path, expected_sha256: str) -> None:
         raise LangPackError(
             "The downloaded file doesn't match what the server expects - "
             "it may have been corrupted in transit. Try again.")
+
+
+def _fetch_pending(install_id: str) -> list[str]:
+    url = SERVER_URL.rstrip("/") + f"/v1/installs/{install_id}/pending"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            return json.loads(resp.read().decode("utf-8")).get("pending", [])
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError):
+        return []
+
+
+def _ack_pending(install_id: str, code: str) -> None:
+    url = SERVER_URL.rstrip("/") + f"/v1/installs/{install_id}/pending/{code}/ack"
+    req = urllib.request.Request(url, data=b"", method="POST")
+    try:
+        urllib.request.urlopen(req, timeout=5).close()
+    except (urllib.error.URLError, TimeoutError, OSError):
+        pass          # best-effort - a missed ack just means a harmless re-delivery later
+
+
+def apply_remote_triggers(progress: Progress = None) -> list[str]:
+    """Install whatever this install's id has pending on the server, e.g.
+    from `POST /v1/admin/trigger` fired at the PC builder's install_id once
+    the lite test build is back. Best-effort and silent on any network
+    failure, same as everything else in this module - there is no
+    connectivity guarantee and none should be assumed. Returns the codes
+    actually installed this call."""
+    if not SERVER_URL:
+        return []
+    install_id = get_install_id()
+    if not install_id:
+        return []       # telemetry (and so this install's id) is opted out
+
+    pending = _fetch_pending(install_id)
+    if not pending:
+        return []
+
+    installed = _load_installed()
+    done = []
+    for code in pending:
+        if code in installed:
+            _ack_pending(install_id, code)     # already have it; just clear the backlog
+            continue
+        try:
+            install(code, progress=progress)
+        except LangPackError:
+            continue        # leave it pending - a later restart/poll will retry
+        _ack_pending(install_id, code)
+        done.append(code)
+    return done
 
 
 def _extract(zip_path: Path, models_dir: Path) -> None:

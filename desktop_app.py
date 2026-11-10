@@ -22,8 +22,13 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sermon import telemetry  # noqa: E402
+from sermon import langpacks, telemetry  # noqa: E402
 from sermon.config import APP_VERSION  # noqa: E402
+
+# How often a running instance re-checks for a remotely-triggered language
+# pack, so a trigger fired while the app is already open is picked up
+# without needing a restart.
+_REMOTE_TRIGGER_POLL_SECONDS = 900
 
 
 APP_TITLE = "Neo Language Box"
@@ -130,6 +135,30 @@ def _stt_choice() -> str:
     return DEFAULT_STT
 
 
+def _start_remote_trigger_thread() -> threading.Thread:
+    """Poll for remotely-triggered language packs, forever, in the background.
+
+    Runs once immediately, then every _REMOTE_TRIGGER_POLL_SECONDS - best
+    effort and silent, same as everything else that touches the telemetry
+    server, so a quiet LAN or a down server just means "nothing happened
+    yet", never a crash.
+    """
+    def _run():
+        while True:
+            try:
+                installed = langpacks.apply_remote_triggers()
+                if installed:
+                    print(f"[desktop] installed remotely-triggered language "
+                          f"pack(s): {', '.join(installed)} (active after restart)")
+            except Exception as exc:
+                print(f"[desktop] remote-trigger poll failed: {exc}", file=sys.stderr)
+            time.sleep(_REMOTE_TRIGGER_POLL_SECONDS)
+
+    t = threading.Thread(target=_run, daemon=True, name="remote-trigger-poll")
+    t.start()
+    return t
+
+
 def _start_server_thread() -> threading.Thread:
     """Kick off the pipeline in a daemon thread.
 
@@ -191,6 +220,11 @@ def main() -> int:
     # Fire-and-forget: sends at most one ping (install, or update if the
     # version changed since last run), never blocks startup on it.
     telemetry.check_install_or_update(APP_VERSION)
+
+    # Fire-and-forget, then keep polling in the background: picks up any
+    # language pack remotely triggered for this install (see
+    # sermon/langpacks.py's apply_remote_triggers) without needing a restart.
+    _start_remote_trigger_thread()
 
     missing = _missing_models(models)
     if missing:

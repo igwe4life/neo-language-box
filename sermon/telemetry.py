@@ -147,6 +147,19 @@ def send_session_end(peak_listeners: int, languages: list[str],
         _run_in_background(_go)
 
 
+def get_install_id() -> Optional[str]:
+    """This install's id, the same one check_install_or_update() reports
+    under - so a remote-trigger lookup and a telemetry ping always agree on
+    which install they mean. None if telemetry is off (no id is minted for
+    an install that has opted out)."""
+    if not is_enabled():
+        return None
+    state = _load_state()
+    iid = _install_id(state)
+    _save_state(state)
+    return iid
+
+
 def check_manifest() -> Optional[dict]:
     """Fetch the current {app_version, app_download_url, language_packs}.
     Returns None if telemetry is off, unconfigured, or unreachable - callers
