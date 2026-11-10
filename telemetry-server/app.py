@@ -25,6 +25,20 @@
    live on this server's own volume for now. Revisit if that stops being
    true.
 
+5. Remote-trigger a pack install on one specific install, with no one
+   touching that machine or its UI:
+     POST /v1/admin/trigger              (requires X-Admin-Token)
+       {"install_id": "...", "codes": ["yo", "ig"]}
+     GET  /v1/installs/{install_id}/pending
+       -> {"pending": ["yo", "ig"]}        (polled by sermon/langpacks.py)
+     POST /v1/installs/{install_id}/pending/{code}/ack
+       marks it fulfilled so it isn't re-sent on the next poll.
+   install_id is a 32-hex-char value the client already treats as a bearer
+   secret (see sermon/telemetry.py) - knowing it is what scopes the
+   /pending and /ack calls to one install, same trust model as the rest of
+   this API. Only /admin/trigger - which can make a chosen install start
+   downloading something - needs its own token on top of that.
+
 Storage is one SQLite file plus, now, a directory of zip files. At this
 data volume (a ping every so often from every install, not every request
 on every page load) SQLite is not a simplification made to cut corners -
@@ -51,6 +65,7 @@ ROOT = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("TELEMETRY_DB", ROOT / "telemetry.db"))
 MANIFEST_PATH = Path(os.environ.get("TELEMETRY_MANIFEST", ROOT / "manifest.json"))
 PACKS_DIR = Path(os.environ.get("TELEMETRY_PACKS_DIR", ROOT / "packs"))
+ADMIN_TOKEN = os.environ.get("TELEMETRY_ADMIN_TOKEN", "")
 
 app = FastAPI(title="Neo Language Box telemetry", docs_url=None, redoc_url=None)
 
@@ -75,6 +90,16 @@ def _init_db() -> None:
         """)
         con.execute("CREATE INDEX IF NOT EXISTS idx_pings_install ON pings(install_id)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_pings_type ON pings(type)")
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS pending_packs (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                install_id      TEXT NOT NULL,
+                code            TEXT NOT NULL,
+                requested_at    TEXT NOT NULL,
+                fulfilled_at    TEXT
+            )
+        """)
+        con.execute("CREATE INDEX IF NOT EXISTS idx_pending_install ON pending_packs(install_id)")
 
 
 @contextmanager
@@ -195,6 +220,56 @@ async def pack(filename: str) -> FileResponse:
     if not path.is_file():
         raise HTTPException(404)
     return FileResponse(path, media_type="application/zip", filename=filename)
+
+
+# --------------------------------------------------------------- remote trigger
+
+class TriggerRequest(BaseModel):
+    install_id: str = Field(min_length=8, max_length=64)
+    codes: list[str] = Field(min_length=1, max_length=20)
+
+
+@app.post("/v1/admin/trigger")
+async def admin_trigger(body: TriggerRequest, request: Request) -> dict:
+    if not ADMIN_TOKEN or request.headers.get("x-admin-token") != ADMIN_TOKEN:
+        raise HTTPException(403)
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    with _db() as con:
+        # Skip a code already pending-and-unfulfilled for this install,
+        # rather than piling up duplicate rows every time the same trigger
+        # is sent twice.
+        existing = {row[0] for row in con.execute(
+            "SELECT code FROM pending_packs WHERE install_id = ? AND fulfilled_at IS NULL",
+            (body.install_id,)).fetchall()}
+        added = []
+        for code in body.codes:
+            if code in existing:
+                continue
+            con.execute(
+                "INSERT INTO pending_packs (install_id, code, requested_at) VALUES (?, ?, ?)",
+                (body.install_id, code, now))
+            added.append(code)
+    return {"ok": True, "added": added, "already_pending": [c for c in body.codes if c in existing]}
+
+
+@app.get("/v1/installs/{install_id}/pending")
+async def pending_for_install(install_id: str) -> dict:
+    with _db() as con:
+        rows = con.execute(
+            "SELECT code FROM pending_packs WHERE install_id = ? AND fulfilled_at IS NULL",
+            (install_id,)).fetchall()
+    return {"pending": [r[0] for r in rows]}
+
+
+@app.post("/v1/installs/{install_id}/pending/{code}/ack")
+async def ack_pending(install_id: str, code: str) -> dict:
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    with _db() as con:
+        con.execute(
+            "UPDATE pending_packs SET fulfilled_at = ? "
+            "WHERE install_id = ? AND code = ? AND fulfilled_at IS NULL",
+            (now, install_id, code))
+    return {"ok": True}
 
 
 # ------------------------------------------------------------------- /v1/stats

@@ -21,3 +21,4 @@ telemetry-server/telemetry.db
 telemetry-server/packs/
 language-packs.json
 .claude/settings.local.json
+telemetry-server/.admin_token
