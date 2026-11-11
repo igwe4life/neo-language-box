@@ -1,0 +1,20 @@
+# Desktop packaging dependencies - only needed to build or run the desktop
+# app shell (desktop_app.py) and its PyInstaller bundle, not the CLI/server
+# covered by requirements.txt. Install alongside it:
+#   pip install -r requirements.txt -r requirements-desktop.txt
+#
+# These were previously installed ad hoc into the Windows dev venv (not
+# tracked anywhere); pinned here so a fresh machine - or a CI runner - can
+# reproduce the same build.
+
+pyinstaller>=6.22,<7
+
+# pywebview opens the native window. [cocoa] pulls in the pyobjc frameworks
+# (Cocoa/WebKit) its macOS backend needs; Windows uses WebView2 via
+# clr_loader/pythonnet instead (plain pywebview covers both).
+pywebview[cocoa]>=6.2,<7 ; sys_platform == "darwin"
+pywebview>=6.2,<7 ; sys_platform != "darwin"
+
+# WASAPI loopback (system-audio capture) - Windows only. There is no macOS
+# equivalent yet; see desktop_app.py and sermon/audio.py's SystemAudioSource.
+pyaudiowpatch>=0.2.12,<0.3 ; sys_platform == "win32"

@@ -167,12 +167,16 @@ def _start_server_thread() -> threading.Thread:
     quickly and show "starting..." while models come up.
     """
     def _run():
-        # Set up args as if the user typed them on the command line
+        # Set up args as if the user typed them on the command line.
+        # "system" (WASAPI loopback) only exists on Windows - see
+        # sermon/audio.py's SystemAudioSource. The macOS build has no
+        # equivalent yet, so it falls back to the microphone.
+        source = "system" if sys.platform == "win32" else "mic"
         sys.argv = [
             "run.py",
             "--serve",
             "--port", str(LOOPBACK_PORT),
-            "--source", "system",
+            "--source", source,
             "--tls",
             "--tauri",              # add loopback HTTP bind for the webview
             "--stt", _stt_choice(),

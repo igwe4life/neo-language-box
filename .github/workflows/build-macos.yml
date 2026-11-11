@@ -1,0 +1,85 @@
+name: Build macOS app
+
+# Manual only - this downloads multi-GB model assets and runs PyInstaller on
+# two architectures, so it isn't something to fire on every push. See
+# scripts/build_models_ship.py for how the models-ship-v1 release asset this
+# depends on was produced, and desktop.spec for the mac-specific packaging
+# (BUNDLE(), mic-only audio, no WASAPI loopback).
+on:
+  workflow_dispatch:
+    inputs:
+      models_release_tag:
+        description: "Release tag holding the models-ship zip parts"
+        required: false
+        default: "models-ship-v1"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14   # Apple Silicon (arm64)
+            arch: arm64
+          - runner: macos-13   # Intel (x86_64)
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-desktop.txt
+
+      - name: Download and reassemble the model set
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.models_release_tag }}"
+          mkdir -p models-dl
+          gh release download "$tag" -R "${{ github.repository }}" \
+            -p "models-ship.zip.part-*" -p "models-ship.sha256" -D models-dl
+          cat models-dl/models-ship.zip.part-* > models-ship.zip
+          declare -a expected=($(cat models-dl/models-ship.sha256))
+          actual="$(shasum -a 256 models-ship.zip | awk '{print $1}')"
+          if [ "$actual" != "${expected[0]}" ]; then
+            echo "sha256 mismatch: expected ${expected[0]}, got $actual" >&2
+            exit 1
+          fi
+          mkdir -p models-ship
+          unzip -q models-ship.zip -d models-ship
+          ls models-ship/models
+
+      - name: Build the .app with PyInstaller
+        run: pyinstaller --clean --noconfirm desktop.spec
+
+      - name: Copy models beside the executable
+        run: |
+          # Mirrors installer.iss's approach on Windows: models are copied
+          # in after the build, not baked in by PyInstaller, so the model
+          # set can change without rebuilding the app.
+          cp -R models-ship/models "dist/NeoLanguageBox.app/Contents/MacOS/models"
+
+      - name: Build the .dmg
+        run: |
+          set -euo pipefail
+          name="NeoLanguageBoxSetup-mac-${{ matrix.arch }}"
+          mkdir -p dmg_root
+          cp -R "dist/NeoLanguageBox.app" dmg_root/
+          hdiutil create -volname "Neo Language Box" -srcfolder dmg_root \
+            -ov -format UDZO "${name}.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeoLanguageBoxSetup-mac-${{ matrix.arch }}
+          path: NeoLanguageBoxSetup-mac-${{ matrix.arch }}.dmg
+          retention-days: 14

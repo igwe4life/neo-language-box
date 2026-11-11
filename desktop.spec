@@ -14,11 +14,16 @@
 
 # ruff: noqa
 
+import sys
+
 from PyInstaller.utils.hooks import (
     collect_data_files,
     collect_dynamic_libs,
     collect_submodules,
 )
+
+sys.path.insert(0, ".")
+from sermon.config import APP_VERSION
 
 block_cipher = None
 
@@ -54,17 +59,24 @@ binaries += collect_dynamic_libs("tokenizers")
 # sentencepiece
 binaries += collect_dynamic_libs("sentencepiece")
 
-# PortAudio via sounddevice + PyAudioWPatch (WASAPI loopback)
-binaries += collect_dynamic_libs("_sounddevice_data")
-datas    += collect_data_files("sounddevice", include_py_files=False)
-try:
-    import pyaudiowpatch, os
-    root = os.path.dirname(pyaudiowpatch.__file__)
-    for f in os.listdir(root):
-        if f.endswith(".dll") or f.endswith(".pyd"):
-            binaries.append((os.path.join(root, f), "pyaudiowpatch"))
-except Exception:
-    pass
+# PortAudio via sounddevice. On Windows, PyAudioWPatch adds the WASAPI
+# loopback flag that stock sounddevice doesn't ship (see
+# sermon/audio.py's SystemAudioSource) - there's no macOS equivalent yet,
+# so the mac build is microphone-only and skips it entirely.
+if sys.platform == "win32":
+    binaries += collect_dynamic_libs("_sounddevice_data")
+    datas    += collect_data_files("sounddevice", include_py_files=False)
+    try:
+        import pyaudiowpatch, os
+        root = os.path.dirname(pyaudiowpatch.__file__)
+        for f in os.listdir(root):
+            if f.endswith(".dll") or f.endswith(".pyd"):
+                binaries.append((os.path.join(root, f), "pyaudiowpatch"))
+    except Exception:
+        pass
+else:
+    binaries += collect_dynamic_libs("sounddevice")
+    datas    += collect_data_files("sounddevice", include_py_files=False)
 
 # cryptography - self-signed cert generation
 binaries += collect_dynamic_libs("cryptography")
@@ -149,3 +161,31 @@ coll = COLLECT(
     upx_exclude=[],
     name="NeoLanguageBox",
 )
+
+# macOS: COLLECT alone only produces a plain onedir folder, not a real .app
+# (Info.plist, Contents/MacOS/... structure) - BUNDLE is what makes it
+# double-clickable from Finder and launchable via LaunchServices.
+#
+# NSMicrophoneUsageDescription is not cosmetic: without it in Info.plist,
+# macOS silently denies the mic permission request sounddevice makes (TCC),
+# so the app would otherwise just get no audio with no error shown.
+#
+# Models are copied in beside the built .app by the packaging workflow
+# (.github/workflows/build-macos.yml), not by PyInstaller - same reason
+# installer.iss does it for Windows rather than baking them in here.
+if sys.platform == "darwin":
+    app = BUNDLE(
+        coll,
+        name="NeoLanguageBox.app",
+        icon=None,
+        bundle_identifier="com.neolanguagebox.app",
+        info_plist={
+            "CFBundleShortVersionString": APP_VERSION,
+            "CFBundleVersion": APP_VERSION,
+            "NSMicrophoneUsageDescription": (
+                "Neo Language Box needs microphone access to transcribe "
+                "and translate what is spoken."
+            ),
+            "NSHighResolutionCapable": True,
+        },
+    )
