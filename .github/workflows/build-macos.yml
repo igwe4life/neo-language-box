@@ -22,8 +22,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14   # Apple Silicon (arm64)
-            arch: arm64
+          # macos-14 (Apple Silicon/arm64) is gated behind a GitHub billing
+          # tier this account doesn't have yet ("configuration ... is not
+          # supported" at job start, not a workflow bug) - re-add it once
+          # that's sorted out. In the meantime this x86_64 build still runs
+          # on Apple Silicon Macs via Rosetta 2, just slower.
           - runner: macos-13   # Intel (x86_64)
             arch: x86_64
     runs-on: ${{ matrix.runner }}
