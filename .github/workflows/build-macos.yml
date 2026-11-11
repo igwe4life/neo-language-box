@@ -22,11 +22,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macos-14 (Apple Silicon/arm64) is gated behind a GitHub billing
-          # tier this account doesn't have yet ("configuration ... is not
-          # supported" at job start, not a workflow bug) - re-add it once
-          # that's sorted out. In the meantime this x86_64 build still runs
-          # on Apple Silicon Macs via Rosetta 2, just slower.
+          # macos-14 (Apple Silicon/arm64) failed outright ("configuration
+          # ... is not supported") and macos-13 (x86_64) queued indefinitely
+          # while this repo was private - both are consistent with the
+          # private-repo Actions minutes/runner limits GitHub applies to
+          # macOS jobs specifically. Re-enabled now that the repo is public,
+          # where Actions (including macOS runners) are unmetered.
+          - runner: macos-14   # Apple Silicon (arm64)
+            arch: arm64
           - runner: macos-13   # Intel (x86_64)
             arch: x86_64
     runs-on: ${{ matrix.runner }}
