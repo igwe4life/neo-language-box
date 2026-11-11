@@ -1,10 +1,16 @@
 name: Build macOS app
 
-# Manual only - this downloads multi-GB model assets and runs PyInstaller on
-# two architectures, so it isn't something to fire on every push. See
+# Manual only - this downloads multi-GB model assets and runs PyInstaller,
+# so it isn't something to fire on every push. See
 # scripts/build_models_ship.py for how the models-ship-v1 release asset this
 # depends on was produced, and desktop.spec for the mac-specific packaging
 # (BUNDLE(), mic-only audio, no WASAPI loopback).
+#
+# Apple Silicon only (macos-latest): GitHub retired Intel macOS runners
+# entirely (macos-13 queues forever - it's gone from the hosted fleet) and
+# "macos-14" isn't a valid image name either (only macos-15-arm64 and
+# macos-26-arm64 exist per actions/runner-images' current releases).
+# macos-latest always points at whatever current image that resolves to.
 on:
   workflow_dispatch:
     inputs:
@@ -18,21 +24,7 @@ permissions:
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # macos-14 (Apple Silicon/arm64) failed outright ("configuration
-          # ... is not supported") and macos-13 (x86_64) queued indefinitely
-          # while this repo was private - both are consistent with the
-          # private-repo Actions minutes/runner limits GitHub applies to
-          # macOS jobs specifically. Re-enabled now that the repo is public,
-          # where Actions (including macOS runners) are unmetered.
-          - runner: macos-14   # Apple Silicon (arm64)
-            arch: arm64
-          - runner: macos-13   # Intel (x86_64)
-            arch: x86_64
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -78,7 +70,7 @@ jobs:
       - name: Build the .dmg
         run: |
           set -euo pipefail
-          name="NeoLanguageBoxSetup-mac-${{ matrix.arch }}"
+          name="NeoLanguageBoxSetup-mac-arm64"
           mkdir -p dmg_root
           cp -R "dist/NeoLanguageBox.app" dmg_root/
           hdiutil create -volname "Neo Language Box" -srcfolder dmg_root \
@@ -86,6 +78,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: NeoLanguageBoxSetup-mac-${{ matrix.arch }}
-          path: NeoLanguageBoxSetup-mac-${{ matrix.arch }}.dmg
+          name: NeoLanguageBoxSetup-mac-arm64
+          path: NeoLanguageBoxSetup-mac-arm64.dmg
           retention-days: 14
