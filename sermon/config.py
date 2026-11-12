@@ -185,7 +185,19 @@ LANGUAGES = {
 }
 
 DEFAULT_TARGETS = ["fr", "es", "pt", "de", "it", "ru", "ar", "hi", "zh",
-                   "sw", "ig", "yo", "ha", "id", "tr", "pl", "bn", "ur"]
+                   "sw", "ig", "yo", "ha", "id", "tr"]
+# PERSONAL BUILD (throwaway branch, not merged to develop): narrowed from 18
+# to 15 languages per request - first 15 of the full list below, dropping
+# pl/bn/ur. Heads up: the 12-language personal build already showed most
+# Piper voices failing to load with ONNXRuntimeError "bad allocation" (real
+# RAM exhaustion on an 8 GB machine, loading all voices concurrently) - 15
+# will very likely hit the same, or worse. Not fatal (translation still
+# works; only audio synthesis gets disabled for whichever voices fail), but
+# expect it.
+#
+# Full default-target list, restored on develop:
+# ["fr", "es", "pt", "de", "it", "ru", "ar", "hi", "zh",
+#  "sw", "ig", "yo", "ha", "id", "tr", "pl", "bn", "ur"]
 # Igbo was pulled from the default set 2026-10-04 while investigating reports
 # of it sounding wrong in the field, and restored 2026-11-06 after the actual
 # cause (BroadcastSink.emit() blocking the pipeline on synthesis - see the

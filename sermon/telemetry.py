@@ -51,8 +51,12 @@ def _save_state(state: dict) -> None:
 
 def is_enabled() -> bool:
     """Defaults to on - matches the operator dashboard's toggle default.
-    Flip it from there, or by setting "enabled": false in telemetry.json."""
-    return _load_state().get("enabled", True)
+    Flip it from there, or by setting "enabled": false in telemetry.json.
+
+    PERSONAL BUILD (throwaway branch, not merged to develop): defaulted to
+    off instead - this copy is meant to make zero network calls of any
+    kind, not just work offline for translation."""
+    return _load_state().get("enabled", False)
 
 
 def set_enabled(value: bool) -> None:
