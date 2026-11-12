@@ -168,15 +168,20 @@ def _start_server_thread() -> threading.Thread:
     """
     def _run():
         # Set up args as if the user typed them on the command line.
-        # "system" (WASAPI loopback) only exists on Windows - see
-        # sermon/audio.py's SystemAudioSource. The macOS build has no
-        # equivalent yet, so it falls back to the microphone.
-        source = "system" if sys.platform == "win32" else "mic"
+        # "mic" on every platform: under --serve, run.py now builds a
+        # SelectableSource(kind="mic") rather than a plain MicrophoneSource
+        # (see run.py), which lets the operator UI switch to "system"
+        # (WASAPI loopback, Windows-only) or another input device at
+        # runtime - safely, since that live-switch path already catches and
+        # rolls back a failed backend. Defaulting to "system" here used to
+        # crash outright on at least one real machine (PortAudio -9997
+        # "Invalid sample rate" the moment the unguarded FIRST start() call
+        # opened it), which "mic" as the initial kind avoids entirely.
         sys.argv = [
             "run.py",
             "--serve",
             "--port", str(LOOPBACK_PORT),
-            "--source", source,
+            "--source", "mic",
             "--tls",
             "--tauri",              # add loopback HTTP bind for the webview
             "--stt", _stt_choice(),

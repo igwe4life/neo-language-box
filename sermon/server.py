@@ -395,8 +395,16 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
                 state = "paused"
             else:
                 state = "running"
+            # Running but not yet calibrated: unmute()/resume() takes effect
+            # on the very next audio block, but noise-floor calibration still
+            # needs calibrate_s (briefly) before real speech detection starts -
+            # the dashboard spins the Start button through this window instead
+            # of looking like the click did nothing.
+            calibrating = (state == "running"
+                           and not getattr(src, "calibrated", True)) if src else False
             body = json.dumps({
                 "state": state,
+                "calibrating": calibrating,
                 "listeners": broadcaster.client_count,
                 "listener_langs": broadcaster.language_counts(),
                 "languages_active": len(broadcaster.languages),

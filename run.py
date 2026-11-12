@@ -399,6 +399,23 @@ def cmd_live(args) -> int:
         cfg.server.enabled = True
     elif use_network_mic:
         source = NetworkMicrophoneSource(cfg.audio)
+    elif cfg.server.enabled:
+        # Under --serve, use SelectableSource even for the "mic" default -
+        # it's a strict superset of MicrophoneSource (same hardened
+        # _start_mic_capture, with its own sample-rate/format fallback) that
+        # also gets: the operator UI's source switcher (hasattr(src,
+        # "set_input") is what gates "switchable" in /api/status), the
+        # explicit-Start-button "paused" gate for free (SystemAudioSource.
+        # __init__ sets paused=True unconditionally, regardless of kind),
+        # and a live-switch path (set_input()) that already catches and
+        # rolls back a failed backend instead of crashing the server - unlike
+        # the very first start() call below, which is NOT exception-guarded.
+        # That's exactly why the default kind here is "mic", not "system":
+        # on at least one real machine, "system" (WASAPI loopback) crashed
+        # with PortAudio -9997 "Invalid sample rate" the moment the FIRST
+        # start() opened it; switching to it later from the dashboard is
+        # safe either way, since set_input() guards that path already.
+        source = SelectableSource(cfg.audio, kind="mic")
     else:
         source = MicrophoneSource(cfg.audio)
     sinks = [ConsoleSink(show_timing=not args.quiet)]

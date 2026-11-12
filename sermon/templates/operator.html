@@ -150,6 +150,8 @@
   .big-btn:hover:not(:disabled) { transform: scale(1.045); }
   .big-btn:active:not(:disabled) { transform: scale(0.97); }
   .big-btn:disabled { opacity: .5; cursor: default; }
+  .big-btn.busy svg { animation: btn-spin .8s linear infinite; }
+  @keyframes btn-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   .big-label { font-size: 15px; font-weight: 700; letter-spacing: .3px; }
   .state-line { font-size: 12.5px; color: var(--muted); }
   .state-line b { color: var(--fg); font-weight: 600; }
@@ -699,12 +701,19 @@ const ICON_STOP = '<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height=
 btn.addEventListener("click", async () => {
   const action = running ? "stop" : "start";
   btn.disabled = true;
+  // Starting still needs ~a second of noise-floor calibration after this
+  // call returns before real speech detection kicks in (poll() clears this
+  // once the server reports calibration done) - spin right away so a slow
+  // click doesn't look like a dead button.
+  if (action === "start") btn.classList.add("busy");
   try {
     const r = await fetch("/api/" + action, { method: "POST" });
     const j = await r.json();
-    if (!j.ok) { alert(j.error || "action failed"); return; }
+    if (!j.ok) { alert(j.error || "action failed"); btn.classList.remove("busy"); return; }
     setRunning(j.state === "running");
+    if (action === "stop") btn.classList.remove("busy");
   } catch (err) {
+    btn.classList.remove("busy");
     alert("Request failed: " + err);
   } finally {
     btn.disabled = false;
@@ -903,6 +912,7 @@ async function poll() {
     const r = await fetch("/api/status");
     const s = await r.json();
     setRunning(s.state === "running");
+    btn.classList.toggle("busy", !!s.calibrating);
     $("listener-total").textContent = s.listeners;
     renderListenerLangs(s.listener_langs, s.listeners);
 
