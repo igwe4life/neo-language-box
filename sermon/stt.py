@@ -200,8 +200,8 @@ def _download_silero() -> Path:
     """Silero VAD is a tiny (~2 MB) ONNX model. Located next to the OTHER
     models so it moves with the models directory - important for the packaged
     desktop app where models sit beside the .exe, not inside the source tree."""
-    from .config import DEFAULT_MODELS_DIR
-    dst = DEFAULT_MODELS_DIR / "silero_vad.onnx"
+    from .config import models_dir
+    dst = models_dir() / "silero_vad.onnx"
     if dst.exists() and dst.stat().st_size > 100_000:
         return dst
     # Legacy fallback for anyone with the old dev-tree location

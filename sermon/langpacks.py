@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .config import LANGUAGE_PACKS_FILE, LANGUAGES, ROOT
+from .config import models_dir as _models_dir
 from .telemetry import SERVER_URL, check_manifest, get_install_id
 
 Progress = Optional[Callable[[int, int], None]]      # (bytes_done, bytes_total)
@@ -73,7 +74,7 @@ def install(code: str, models_dir: Path = None, progress: Progress = None) -> No
     if not SERVER_URL:
         raise LangPackError("No update server is configured.")
     if models_dir is None:
-        models_dir = ROOT / "models"
+        models_dir = _models_dir()
 
     manifest = check_manifest()
     if not manifest:

@@ -9,7 +9,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_MODELS_DIR = Path(os.environ.get("SERMON_MODELS_DIR", str(ROOT / "models")))
+
+
+def models_dir() -> Path:
+    """Where the models live, resolved at CALL time, never at import time.
+
+    This used to be a module constant. The desktop shell sets
+    SERMON_MODELS_DIR in main(), but since the telemetry work it also imports
+    this package at the top of the file - so the constant was frozen before
+    the variable existed and pointed at ROOT/models. From source that folder
+    happens to exist; in the packaged app ROOT is _internal/, the models are
+    beside the .exe, and the server exited at once with "Models are not
+    downloaded yet" while the window waited out its 3-minute timeout.
+    """
+    return Path(os.environ.get("SERMON_MODELS_DIR", str(ROOT / "models")))
 
 # Single source of truth for the app version on the Python side. Inno Setup
 # cannot read this file at build time, so installer.iss's #define AppVersion
@@ -383,7 +396,7 @@ class AppConfig:
     mt: MTConfig = field(default_factory=MTConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
-    models_dir: Path = DEFAULT_MODELS_DIR
+    models_dir: Path = field(default_factory=models_dir)
 
     @property
     def whisper_dir(self) -> Path:
