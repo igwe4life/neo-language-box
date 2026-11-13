@@ -80,7 +80,7 @@
   /* ============================================================ main grid */
   main {
     padding: 22px 26px; display: grid;
-    grid-template-columns: 1.05fr 1fr 1fr;
+    grid-template-columns: 1fr 1.35fr 1fr;
     /* minmax(220px, 1fr), not bare 1fr: on a short window/pane the bottom
        row used to get whatever pixels were left over, sometimes only a few
        - Session Information's fixed 5 rows then rendered inside a scroll box
@@ -136,8 +136,26 @@
   .src-note { margin-top: auto; padding-top: 14px; font-size: 12.5px; color: var(--muted-dim); }
 
   /* -------- Control (top-center) -------- */
-  .control-card { align-items: center; justify-content: center; text-align: center; gap: 14px; }
-  .control-card .card-head { align-self: flex-start; }
+  .control-card { gap: 10px; }
+  .control-card .card-head { justify-content: space-between; }
+  .media-stage { position: relative; flex: 1; min-height: 120px; background: #000;
+                 border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .media-stage video { width: 100%; height: 100%; max-height: 210px; display: block; object-fit: contain; background: #000; }
+  .media-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+                 text-align: center; padding: 0 14px; font-size: 12.5px; color: var(--muted); pointer-events: none; }
+  .media-stage.audio-only .media-empty { align-items: flex-start; padding-top: 16px; }
+  .media-name { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .media-pick { cursor: pointer; border-radius: 999px; padding: 6px 14px; font-size: 12.5px; font-weight: 700;
+                border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: var(--fg); }
+  .media-pick:hover { background: rgba(255,255,255,0.08); border-color: var(--muted-dim); }
+  .foot-start { display: flex; align-items: center; gap: 9px; cursor: pointer; border: none;
+                border-radius: 999px; padding: 11px 24px; font-size: 14px; font-weight: 800;
+                background: var(--green); color: #06110a; transition: transform .12s, background .2s; }
+  .foot-start svg { width: 16px; height: 16px; fill: currentColor; stroke: none; }
+  .foot-start.stop { background: var(--red); color: #fff; }
+  .foot-start:hover:not(:disabled) { transform: scale(1.03); }
+  .foot-start:disabled { opacity: .6; cursor: default; }
+  .foot-start.busy svg { animation: btn-spin .8s linear infinite; }
   .big-btn {
     width: 96px; height: 96px; border-radius: 50%; border: none; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
@@ -430,8 +448,9 @@
       <h3>Audio Source</h3>
     </div>
     <select id="src-kind">
-      <option value="system">System Audio</option>
       <option value="mic">Microphone / Line-in</option>
+      <option value="media">Media Player (file)</option>
+      <option value="system">System Audio</option>
     </select>
     <div class="device-row">
       <select id="src-device"><option value="">Default device</option></select>
@@ -441,12 +460,16 @@
   </div>
 
   <div class="card control-card">
-    <div class="card-head"><h3>Control</h3></div>
-    <button class="big-btn" id="btn" aria-label="Start">
-      <svg viewBox="0 0 24 24"><polygon points="6,4 20,12 6,20"/></svg>
-    </button>
-    <div class="big-label" id="btn-label">Start</div>
-    <div class="state-line">Status: <b id="state-text-2">Paused</b></div>
+    <div class="card-head">
+      <h3>Media Player</h3>
+      <button class="media-pick" id="media-pick">Choose file</button>
+      <input type="file" id="media-file" accept="audio/*,video/*,.mp3,.mp4,.m4a,.wav" hidden>
+    </div>
+    <div class="media-stage" id="media-stage">
+      <video id="media-el" controls playsinline></video>
+      <div class="media-empty" id="media-empty">Choose an MP3 or MP4 file to play it here and translate its audio.</div>
+    </div>
+    <div class="media-name" id="media-name">No file selected</div>
   </div>
 
   <div class="card meter-card">
@@ -511,6 +534,8 @@
 
 <footer>
   <div class="foot-left">
+    <button class="foot-start" id="btn" aria-label="Start"></button>
+    <span id="btn-label" hidden></span><b id="state-text-2" hidden></b>
     <div class="foot-status idle" id="foot-status">
       <span class="dot" id="foot-dot"></span>
       <span id="foot-text">System Offline</span>
@@ -723,7 +748,8 @@ btn.addEventListener("click", async () => {
 function setRunning(on) {
   running = on;
   btn.classList.toggle("stop", on);
-  btn.innerHTML = on ? ICON_STOP : ICON_PLAY;
+  btn.innerHTML = (on ? ICON_STOP : ICON_PLAY)
+    + "<span>" + (on ? "Stop translating" : "Start translating") + "</span>";
   btn.setAttribute("aria-label", on ? "Stop" : "Start");
   btnLabel.textContent = on ? "Stop" : "Start";
   const label = on ? "capturing" : "paused";
@@ -753,8 +779,10 @@ async function loadDevices() {
 }
 
 function fillDeviceList() {
-  const list = srcKind.value === "mic" ? (devices.mics || []) : (devices.loopbacks || []);
-  const label = srcKind.value === "mic" ? "Default microphone" : "Default output (follow system)";
+  const kind = srcKind.value;
+  const list = kind === "mic" ? (devices.mics || []) : kind === "system" ? (devices.loopbacks || []) : [];
+  const label = kind === "mic" ? "Default microphone"
+              : kind === "system" ? "Default output (follow system)" : "File chosen in the media player";
   const prev = srcDevice.value;
   // Value is the INDEX, not the name: Windows lists the same hardware once per
   // host API, so names collide and a name-keyed pick lands on the wrong one.
@@ -795,6 +823,95 @@ async function applySource() {
 srcKind.addEventListener("change", () => { fillDeviceList(); applySource(); });
 srcDevice.addEventListener("change", applySource);
 loadDevices();
+
+// -------------------------------------------------------------- media player
+// Plays a local MP3/MP4 in this window. Its audio goes two ways: out of the
+// speakers as usual, and - tapped by an AudioWorklet - to the server's /mic
+// socket as 16-bit PCM, the same path the phone "speaker" page uses. The
+// server only accepts it while "Media Player" is the selected source and
+// translation has been started, so playing and translating stay separate.
+const mediaEl = $("media-el"), mediaStage = $("media-stage"), mediaEmpty = $("media-empty");
+let mediaCtx = null, mediaWs = null, mediaUrl = null;
+
+const MEDIA_WORKLET = `
+class Tap extends AudioWorkletProcessor {
+  constructor(){ super(); this._buf = new Float32Array(0); this._chunk = 2048; }
+  process(inputs){
+    const chans = inputs[0];
+    // A paused element delivers no channels at all: send silence instead, so
+    // the server's segmenter can close the utterance that was in progress.
+    let ch = new Float32Array(128);
+    if (chans && chans[0]) {
+      ch = chans[0];
+      if (chans[1]) { ch = new Float32Array(chans[0].length);
+        for (let i = 0; i < ch.length; i++) ch[i] = (chans[0][i] + chans[1][i]) / 2; }
+    }
+    const b = new Float32Array(this._buf.length + ch.length);
+    b.set(this._buf); b.set(ch, this._buf.length); this._buf = b;
+    while (this._buf.length >= this._chunk) {
+      const out = this._buf.slice(0, this._chunk);
+      this._buf = this._buf.slice(this._chunk);
+      this.port.postMessage(out, [out.buffer]);
+    }
+    return true;
+  }
+}
+registerProcessor('media-tap', Tap);
+`;
+
+function openMediaSocket() {
+  if (mediaWs && mediaWs.readyState <= WebSocket.OPEN) return;
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  mediaWs = new WebSocket(proto + "//" + location.host + "/mic");
+  mediaWs.binaryType = "arraybuffer";
+  mediaWs.onopen = () => mediaWs.send(JSON.stringify({ sampleRate: mediaCtx.sampleRate }));
+  mediaWs.onclose = () => { if (mediaCtx) setTimeout(openMediaSocket, 1000); };
+}
+
+async function ensureMediaTap() {
+  if (mediaCtx) { if (mediaCtx.state === "suspended") await mediaCtx.resume(); return; }
+  mediaCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const blob = new Blob([MEDIA_WORKLET], { type: "application/javascript" });
+  await mediaCtx.audioWorklet.addModule(URL.createObjectURL(blob));
+  const node = mediaCtx.createMediaElementSource(mediaEl);
+  const tap = new AudioWorkletNode(mediaCtx, "media-tap", { numberOfInputs: 1, numberOfOutputs: 0 });
+  node.connect(mediaCtx.destination);   // still heard through the speakers
+  node.connect(tap);
+  tap.port.onmessage = ev => {
+    if (!mediaWs || mediaWs.readyState !== WebSocket.OPEN) return;
+    const f32 = ev.data, i16 = new Int16Array(f32.length);
+    for (let i = 0; i < f32.length; i++) {
+      const v = Math.max(-1, Math.min(1, f32[i]));
+      i16[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+    }
+    mediaWs.send(i16.buffer);
+  };
+  openMediaSocket();
+}
+
+$("media-pick").addEventListener("click", () => $("media-file").click());
+$("media-file").addEventListener("change", ev => {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  if (mediaUrl) URL.revokeObjectURL(mediaUrl);
+  mediaUrl = URL.createObjectURL(file);
+  mediaEl.src = mediaUrl;
+  $("media-name").textContent = file.name;
+  mediaEmpty.textContent = "";
+  // Choosing a file is a clear statement of intent: make it the source.
+  if (srcKind.value !== "media") { srcKind.value = "media"; fillDeviceList(); applySource(); }
+});
+mediaEl.addEventListener("loadedmetadata", () => {
+  const audioOnly = !mediaEl.videoWidth;
+  mediaStage.classList.toggle("audio-only", audioOnly);
+  mediaEmpty.textContent = audioOnly ? "Audio file" : "";
+});
+mediaEl.addEventListener("play", () => {
+  ensureMediaTap().catch(err => { $("media-name").textContent = "Audio capture failed: " + err; });
+});
+mediaEl.addEventListener("error", () => {
+  if (mediaEl.src) $("media-name").textContent = "This file can't be played here. Try an MP3 or MP4.";
+});
 
 // -------------------------------------------------------------- level meter
 const NUM_BLOCKS = 24;
@@ -921,9 +1038,10 @@ async function poll() {
       if (srcDevice.value !== (s.device || "")) srcDevice.value = s.device || "";
     }
     srcKind.disabled = srcDevice.disabled = applyingSource || !s.switchable;
-    srcDesc.textContent = (s.kind === "mic" ? "microphone" : "system audio")
+    const kindName = { mic: "microphone", media: "media player", system: "system audio" }[s.kind] || "system audio";
+    srcDesc.textContent = kindName
       + (s.device ? " (" + deviceLabel(s.kind, s.device) + ")" : "");
-    meterTitleSub.textContent = s.kind === "mic" ? "Microphone input" : "System audio";
+    meterTitleSub.textContent = { mic: "Microphone input", media: "Media player audio" }[s.kind] || "System audio";
 
     paintMeter(s.peak_db);
     const speaking = !!s.in_speech;
