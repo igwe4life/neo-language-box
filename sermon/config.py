@@ -197,8 +197,11 @@ LANGUAGES = {
     "ur": {"native": "اردو",       "flag": "\U0001F1F5\U0001F1F0", "speech": "ur-PK", "rtl": True},
 }
 
-DEFAULT_TARGETS = ["fr", "es", "pt", "de", "it", "ru", "ar", "hi", "zh",
-                   "sw", "ig", "yo", "ha", "id", "tr", "pl", "bn", "ur"]
+DEFAULT_TARGETS = ["fr", "es", "hi", "yo", "ha"]
+# LITE TEST BUILD (throwaway branch, not merged to develop): 5 languages for
+# the PC builder and a friend's test install. Full list on develop:
+# ["fr", "es", "pt", "de", "it", "ru", "ar", "hi", "zh",
+#  "sw", "ig", "yo", "ha", "id", "tr", "pl", "bn", "ur"]
 # Igbo was pulled from the default set 2026-10-04 while investigating reports
 # of it sounding wrong in the field, and restored 2026-11-06 after the actual
 # cause (BroadcastSink.emit() blocking the pipeline on synthesis - see the

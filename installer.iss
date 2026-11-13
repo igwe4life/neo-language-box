@@ -69,8 +69,7 @@ SolidCompression=no
 ; DiskSpanning path the comment at the top of this file anticipated.
 ; Setup.exe plus the .bin slices must all be kept together and shipped as
 ; a set; the installer itself asks for the next one as it needs it.
-DiskSpanning=yes
-DiskSliceSize=2000000000
+; LITE TEST BUILD: 5 languages fit Inno's single-file limit, so one .exe.
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#AppExeName}
 LicenseFile=
