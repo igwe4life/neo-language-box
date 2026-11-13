@@ -637,6 +637,8 @@ class SelectableSource(SystemAudioSource):
 
         "system" - WASAPI loopback: whatever the laptop is playing
         "mic"    - a normal input device (built-in mic, USB mic, mixer feed)
+        "media"  - audio pushed in by the operator dashboard's media player
+                   (submit_audio(), fed from the /mic WebSocket) - no device
 
     Both backends deliver 16 kHz mono float32 blocks, so a switch is invisible
     to the rest of the pipeline. `paused` still gates everything, which keeps
@@ -666,14 +668,31 @@ class SelectableSource(SystemAudioSource):
     def _start_capture(self) -> None:
         if self.kind == "system":
             self._start_system_capture()
-        else:
+        elif self.kind == "mic":
             self._start_mic_capture()
+        # "media": nothing to open - blocks arrive through submit_audio().
 
     def _stop_capture(self) -> None:
         if self.kind == "system":
             self._stop_system_capture()
-        else:
+        elif self.kind == "mic":
             self._stop_mic_capture()
+
+    # ---- media player backend (same contract as NetworkMicrophoneSource) --
+
+    def submit_audio(self, block: np.ndarray) -> None:
+        """A 16 kHz mono block from the dashboard's media player. Dropped
+        unless that is the selected source and the operator has pressed
+        Start, so a file left playing never leaks into another source."""
+        if self.kind != "media" or self.paused or self._stop.is_set():
+            return
+        try:
+            self._raw_q.put_nowait(block)
+        except queue.Full:
+            self.overflows += 1
+
+    def notify_speaker(self, connected: bool) -> None:
+        pass
 
     @staticmethod
     def _resolve_input_device(name: str | None, fallback):
@@ -808,7 +827,7 @@ class SelectableSource(SystemAudioSource):
         """Swap the capture backend. Raises if the new backend won't open,
         after restoring the previous one so the app is never left deaf."""
         kind = (kind or "").strip().lower()
-        if kind not in ("system", "mic"):
+        if kind not in ("system", "mic", "media"):
             raise ValueError(f"unknown source kind: {kind!r}")
 
         with self._switch_lock:
