@@ -323,63 +323,61 @@ def cmd_live(args) -> int:
     from sermon.config import NLLB_TARGETS
 
     # One NLLB model serves every African target; loading a 1.3B model per
-    # language would cost gigabytes, so build it once and take a cheap view
-    # per target.
-    nllb_base = None
-    nllb_wanted = [t for t in targets if t in NLLB_TARGETS]
-    if nllb_wanted:
-        from sermon.mt import NllbTranslator
-        nllb_dir = cfg.models_dir / "nllb-1.3b"
-        t0 = time.perf_counter()
-        print(f"  Loading NLLB-200 for {', '.join(nllb_wanted)}...",
-              end="", flush=True)
-        try:
-            nllb_base = NllbTranslator(nllb_dir, cfg.mt,
-                                       NLLB_TARGETS[nllb_wanted[0]])
-            print(f" {time.perf_counter() - t0:.1f}s")
-        except Exception as exc:
-            print(f" FAILED ({type(exc).__name__}: {str(exc)[:60]})")
-            print("     those languages will be unavailable.")
+    # language would cost gigabytes, so it is built once (on first use) and
+    # each target takes a cheap view of it.
+    nllb_state = {"base": None}
 
-    translators: dict[str, "MarianCT2Translator"] = {}
-    for t in targets:
-        t0 = time.perf_counter()
+    def make_translator(t):
         if t in NLLB_TARGETS:
-            if nllb_base is None:
-                continue
-            tr = nllb_base.for_target(NLLB_TARGETS[t])
-            rules = load_phrase_overrides(phrase_file_for(t))
-            # Wrapping costs this target its place in the batched decode (the
-            # rules run before translation), so only do it when rules exist.
-            translators[t] = OverrideTranslator(tr, rules) if rules else tr
-            extra = f" [+ {len(rules)} phrase overrides, unbatched]" if rules else ""
-            print(f"  Translation en-{t} via NLLB-200{extra}")
-            continue
-        print(f"  Loading translation model en-{t}...", end="", flush=True)
-        tr_cfg = replace(cfg.mt, targets=[t])
-        try:
-            tr = MarianCT2Translator(cfg.mt_dir_for(t), tr_cfg)
-        except Exception as exc:
-            # One bad target must not take the service down. With nine models
-            # loaded at once a small-RAM machine hits `mkl_malloc: failed to
-            # allocate memory` partway through, and a corrupt download raises
-            # here too. Drop that language and carry on with the rest.
-            print(f" FAILED ({type(exc).__name__}: {str(exc)[:60]})")
-            print(f"     en-{t} unavailable; continuing without it.")
-            continue
+            if nllb_state["base"] is None:
+                from sermon.mt import NllbTranslator
+                nllb_state["base"] = NllbTranslator(
+                    cfg.models_dir / "nllb-1.3b", cfg.mt, NLLB_TARGETS[t])
+            tr = nllb_state["base"].for_target(NLLB_TARGETS[t])
+        else:
+            tr = MarianCT2Translator(cfg.mt_dir_for(t), replace(cfg.mt, targets=[t]))
+        # Wrapping an NLLB target costs it its place in the batched decode
+        # (the rules run before translation), so only wrap when rules exist.
         rules = load_phrase_overrides(phrase_file_for(t))
-        translators[t] = OverrideTranslator(tr, rules) if rules else tr
-        extra = f" [+ {len(rules)} phrase overrides]" if rules else ""
-        print(f" {time.perf_counter() - t0:.1f}s{extra}")
-
-    if not translators:
-        print("  !! no translation models could be loaded.")
-        return 2
-    # Targets narrows to what actually loaded, so the listener UI only ever
-    # offers languages the server can really produce.
-    targets = [t for t in targets if t in translators]
+        return OverrideTranslator(tr, rules) if rules else tr
 
     source_kind = getattr(args, "source", "mic")
+    # Under --serve, languages load when a listener first picks them rather
+    # than all at startup (see sermon/ondemand.py for the measurement that
+    # forced this). The plain CLI has no listeners to drive demand, so it
+    # still loads everything; --preload restores that under --serve too.
+    will_serve = cfg.server.enabled or source_kind in ("browser", "system")
+    lazy = will_serve and not getattr(args, "preload", False)
+    loader = None
+
+    if lazy:
+        from sermon.ondemand import OnDemandLanguages
+        print(f"  {len(targets)} languages available - each loads when a "
+              f"listener first selects it.")
+    else:
+        translators: dict[str, "MarianCT2Translator"] = {}
+        for t in targets:
+            t0 = time.perf_counter()
+            print(f"  Loading translation model en-{t}...", end="", flush=True)
+            try:
+                translators[t] = make_translator(t)
+            except Exception as exc:
+                # One bad target must not take the service down. With nine
+                # models loaded at once a small-RAM machine hits `mkl_malloc:
+                # failed to allocate memory` partway through, and a corrupt
+                # download raises here too. Drop that language and carry on.
+                print(f" FAILED ({type(exc).__name__}: {str(exc)[:60]})")
+                print(f"     en-{t} unavailable; continuing without it.")
+                continue
+            print(f" {time.perf_counter() - t0:.1f}s")
+
+        if not translators:
+            print("  !! no translation models could be loaded.")
+            return 2
+        # Targets narrows to what actually loaded, so the listener UI only
+        # ever offers languages the server can really produce.
+        targets = [t for t in targets if t in translators]
+
     use_network_mic = source_kind == "browser"
     use_system_audio = source_kind == "system"
     if use_network_mic and not cfg.server.enabled:
@@ -468,8 +466,45 @@ def cmd_live(args) -> int:
         # Server-side audio: one Piper voice per translation target, so any
         # listener language ends up as an audio clip they can fetch by HTTP.
         # A muted phone or a phone on a language we can't voice pays zero.
+        from sermon.config import VITS_VOICES as _vits
+
+        def voice_path(t):
+            if t in _vits:
+                return cfg.models_dir / "tts" / _vits[t]
+            if t in cfg.tts.voices:
+                return cfg.tts_model_for(cfg.tts.voices[t])
+            return None
+
+        def make_speaker(t):
+            from sermon.tts import PiperSpeaker, VitsSpeaker
+            path = voice_path(t)
+            if args.no_audio or path is None or not path.exists():
+                return None
+            # Per-language length_scale (TTSConfig.length_scale_overrides).
+            voice_cfg = replace(cfg.tts, length_scale=cfg.tts.length_scale_for(t))
+            return (VitsSpeaker if t in _vits else PiperSpeaker)(path, voice_cfg)
+
         audio_speakers: dict[str, "PiperSpeaker"] = {}
-        if not args.no_audio:
+        if lazy:
+            lazy_ctx = {"recorder": None}
+
+            def _wanted_languages():
+                wanted = broadcaster.active_languages()
+                if lazy_ctx["recorder"] is not None:
+                    wanted = wanted | lazy_ctx["recorder"].wanted_languages()
+                return wanted
+
+            def _on_unload(_t):
+                # Free the shared 1.3B model once its last target is gone.
+                if not any(c in NLLB_TARGETS for c in loader.translators):
+                    nllb_state["base"] = None
+
+            loader = OnDemandLanguages(targets, make_translator, make_speaker,
+                                       wanted=_wanted_languages,
+                                       on_unload=_on_unload)
+            translators = loader.translators
+            audio_speakers = loader.speakers
+        elif not args.no_audio:
             from sermon.tts import PiperSpeaker
 
             # Voices load CONCURRENTLY. Sequentially this is ~6s each, which
@@ -541,7 +576,11 @@ def cmd_live(args) -> int:
         broadcaster.languages = offered
         broadcaster.language_meta = {
             code: {**LANGUAGES[code],
-                   "voice": code in audio_speakers,
+                   # On demand, no voice is loaded yet: offer it if its
+                   # model is on disk.
+                   "voice": (code in audio_speakers if not lazy else
+                             (not args.no_audio and voice_path(code) is not None
+                              and voice_path(code).exists())),
                    "source": code == SOURCE_LANG}
             for code in offered if code in LANGUAGES
         }
@@ -553,6 +592,9 @@ def cmd_live(args) -> int:
         from sermon.recorder import Recorder
         recorder = Recorder(ROOT / "recordings")
         broadcaster.recorder = recorder
+        if loader is not None:
+            lazy_ctx["recorder"] = recorder
+            loader.start()
 
         broadcast_sink = BroadcastSink(broadcaster, speakers=audio_speakers,
                                        recorder=recorder)
@@ -734,6 +776,9 @@ def main(argv=None) -> int:
     net.add_argument("--serve", action="store_true",
                      help="serve translations to phones on the same Wi-Fi (default port 8000)")
     net.add_argument("--port", type=int, metavar="N", help="server port (default 8000)")
+    net.add_argument("--preload", action="store_true",
+                     help="with --serve: load every language at startup instead "
+                          "of when a listener first selects it (needs the RAM)")
     net.add_argument("--bind", metavar="ADDR",
                      help="bind address (default 0.0.0.0 = every interface; "
                           "use 127.0.0.1 to keep it to this laptop)")

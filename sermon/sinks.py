@@ -248,7 +248,8 @@ class BroadcastSink(Sink):
         wanted = self.broadcaster.active_languages()
         if self.recorder is not None:
             wanted = wanted | self.recorder.wanted_languages()
-        pending = [lang for lang in self.speakers
+        # list(): under on-demand loading another thread adds/removes voices.
+        pending = [lang for lang in list(self.speakers)
                    if result.translations.get(lang) and lang in wanted]
         message = {
             "type": "translation",
@@ -290,8 +291,13 @@ class BroadcastSink(Sink):
 
     def _synthesize_and_broadcast(self, result: PipelineResult, counter: int,
                                    pending: list[str]) -> None:
+        # Captured now: a voice may be unloaded between here and its turn in
+        # the pool, and holding the reference keeps this clip synthesizable.
+        voices = {lang: self.speakers.get(lang) for lang in pending}
+        pending = [lang for lang in pending if voices[lang] is not None]
+
         def _synthesize(lang):
-            speech = self.speakers[lang].synthesize(result.translations[lang])
+            speech = voices[lang].synthesize(result.translations[lang])
             return lang, speech
 
         # Synthesising every pending language concurrently, not one after

@@ -77,8 +77,9 @@ class Pipeline:
 
     def __init__(self, transcriber: Transcriber, translators: dict[str, Translator],
                  sinks: list | None = None, sample_rate: int = 16000, recorder=None):
-        if not translators:
-            raise ValueError("Pipeline needs at least one translator")
+        # May start empty and change while running: under on-demand loading
+        # (sermon/ondemand.py) another thread adds and removes entries, so
+        # process() works from a snapshot.
         self.transcriber = transcriber
         self.translators = translators
         self.sinks = sinks if sinks is not None else []
@@ -119,9 +120,10 @@ class Pipeline:
         # batched: those rules substitute canned text for whole sentences
         # BEFORE translation, so the wrapper has to own the call. It loses the
         # batching win and keeps the overrides, which is the right trade.
+        active = list(self.translators.items())
         grouped: dict[int, list] = {}
         grouped_codes: set[str] = set()
-        for code, tr in self.translators.items():
+        for code, tr in active:
             base = getattr(tr, "batch_base", None)
             if base is not None and hasattr(base, "translate_many"):
                 grouped.setdefault(id(base), []).append((code, tr, base))
@@ -151,7 +153,7 @@ class Pipeline:
         # interleaving - the GIL is released for the duration of the call.
         futures = [self._pool.submit(_run_group, members) for members in grouped.values()]
         futures += [self._pool.submit(_run_single, code, tr)
-                    for code, tr in self.translators.items() if code not in grouped_codes]
+                    for code, tr in active if code not in grouped_codes]
         for fut in futures:
             for code, text, seconds in fut.result():
                 translations[code] = text
