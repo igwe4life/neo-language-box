@@ -112,7 +112,7 @@ a = Analysis(
     datas=datas,
     hiddenimports=hiddenimports + [
         "sermon.audio", "sermon.config", "sermon.console",
-        "sermon.diagnostics", "sermon.enlex", "sermon.integrity", "sermon.langpacks", "sermon.mt",
+        "sermon.diagnostics", "sermon.enlex", "sermon.integrity", "sermon.langpacks", "sermon.mt", "sermon.ondemand",
         "sermon.pipeline", "sermon.server", "sermon.sinks",
         "sermon.stt", "sermon.telemetry", "sermon.tls", "sermon.tts",
         "run",
