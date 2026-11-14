@@ -204,6 +204,7 @@ class BroadcastSink(Sink):
         self.audio_seconds_generated = 0.0
         self.synth_seconds = 0.0
         self.synth_failures = 0
+        self.audio_skipped = 0
         self._pool = ThreadPoolExecutor(
             max_workers=_SYNTH_WORKERS, thread_name_prefix="tts-fanout")
         # One worker draining a FIFO queue, not one thread per utterance: it
@@ -231,6 +232,14 @@ class BroadcastSink(Sink):
             try:
                 result, counter, pending = self._work_q.get(timeout=0.2)
             except queue.Empty:
+                continue
+            # A voice slower than the speech it is voicing would otherwise
+            # fall further behind with every sentence. When newer sentences
+            # are already waiting, skip this one's audio (its caption has
+            # been sent) so the voice stays close to the speaker.
+            if self._work_q.qsize() >= 2:
+                self.audio_skipped += 1
+                self.broadcaster.broadcast_audio(counter, {})
                 continue
             self._synthesize_and_broadcast(result, counter, pending)
 
