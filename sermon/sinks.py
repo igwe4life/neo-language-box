@@ -197,7 +197,10 @@ class BroadcastSink(Sink):
         emits instead of synthesising its own copy.
         """
         self.broadcaster = broadcaster
-        self.speakers = speakers or {}
+        # "is not None", not "or {}": under on-demand loading this dict starts
+        # EMPTY and is filled in later by the loader. "or {}" swapped that
+        # shared dict for a private empty one, so no server voice was ever used.
+        self.speakers = speakers if speakers is not None else {}
         self.recorder = recorder
         self.counter = 0
         self.audio_generated = 0
