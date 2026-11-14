@@ -136,18 +136,22 @@
   .src-note { margin-top: auto; padding-top: 14px; font-size: 12.5px; color: var(--muted-dim); }
 
   /* -------- Control (top-center) -------- */
-  .control-card { gap: 10px; }
-  .control-card .card-head { justify-content: space-between; }
-  .media-stage { position: relative; flex: 1; min-height: 120px; background: #000;
-                 border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-  .media-stage video { width: 100%; height: 100%; max-height: 210px; display: block; object-fit: contain; background: #000; }
+  /* The player fills the whole card; its label and file picker float over
+     the top edge so the picture gets every pixel. */
+  .control-card { padding: 0; position: relative; overflow: hidden; min-height: 230px; }
+  .media-stage { position: absolute; inset: 0; background: #000; }
+  .media-stage video { width: 100%; height: 100%; display: block; object-fit: contain; background: #000; }
   .media-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-                 text-align: center; padding: 0 14px; font-size: 12.5px; color: var(--muted); pointer-events: none; }
-  .media-stage.audio-only .media-empty { align-items: flex-start; padding-top: 16px; }
-  .media-name { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .media-pick { cursor: pointer; border-radius: 999px; padding: 6px 14px; font-size: 12.5px; font-weight: 700;
-                border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: var(--fg); }
-  .media-pick:hover { background: rgba(255,255,255,0.08); border-color: var(--muted-dim); }
+                 text-align: center; padding: 0 18px; font-size: 13px; color: var(--muted); pointer-events: none; }
+  .media-top { position: absolute; top: 10px; left: 12px; right: 12px; z-index: 2; display: flex;
+               align-items: center; justify-content: space-between; gap: 10px; pointer-events: none; }
+  .media-name { max-width: 62%; padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 600;
+                color: var(--fg); background: rgba(7,10,18,0.66); white-space: nowrap; overflow: hidden;
+                text-overflow: ellipsis; }
+  .media-pick { pointer-events: auto; cursor: pointer; border-radius: 999px; padding: 6px 14px;
+                font-size: 12.5px; font-weight: 700; color: var(--fg);
+                border: 1px solid rgba(255,255,255,0.22); background: rgba(7,10,18,0.66); }
+  .media-pick:hover { background: rgba(7,10,18,0.9); border-color: rgba(255,255,255,0.45); }
   .foot-start { display: flex; align-items: center; gap: 9px; cursor: pointer; border: none;
                 border-radius: 999px; padding: 11px 24px; font-size: 14px; font-weight: 800;
                 background: var(--green); color: #06110a; transition: transform .12s, background .2s; }
@@ -460,16 +464,15 @@
   </div>
 
   <div class="card control-card">
-    <div class="card-head">
-      <h3>Media Player</h3>
-      <button class="media-pick" id="media-pick">Choose file</button>
-      <input type="file" id="media-file" accept="audio/*,video/*,.mp3,.mp4,.m4a,.wav" hidden>
-    </div>
     <div class="media-stage" id="media-stage">
       <video id="media-el" controls playsinline></video>
       <div class="media-empty" id="media-empty">Choose an MP3 or MP4 file to play it here and translate its audio.</div>
     </div>
-    <div class="media-name" id="media-name">No file selected</div>
+    <div class="media-top">
+      <span class="media-name" id="media-name">Media Player</span>
+      <button class="media-pick" id="media-pick">Choose file</button>
+      <input type="file" id="media-file" accept="audio/*,video/*,.mp3,.mp4,.m4a,.wav" hidden>
+    </div>
   </div>
 
   <div class="card meter-card">
