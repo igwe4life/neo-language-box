@@ -686,6 +686,16 @@ function applyMessage(msg, speak) {
     playServerAudio(audioUrl);
     return;
   }
+  // One voice per language. If the server has a voice for this language,
+  // never substitute the phone's own: a clip that arrived late (Igbo
+  // synthesises at about real time on a small machine) used to be replaced
+  // by the phone's built-in voice for that one sentence - a different
+  // speaker, often a different gender, and for Igbo/Yoruba/Hausa usually an
+  // English voice mangling the text. A missed sentence stays as a caption.
+  if (LANGS[lang] && LANGS[lang].voice) {
+    awaitingAudioFor = msg.id;
+    return;
+  }
   // The server sends text as soon as it has it and the spoken clip a moment
   // later. If ours is still being synthesised, wait for it rather than
   // speaking the same sentence twice in two different voices.
@@ -707,6 +717,19 @@ function applyMessage(msg, speak) {
 
 // Second-stage message: clips for a sentence whose text already arrived.
 function applyAudioMessage(msg) {
+  const serverVoice = !!(LANGS[lang] && LANGS[lang].voice);
+  if (serverVoice) {
+    // Play the clip even if a newer caption has already arrived: with a
+    // slow voice that is the normal case, and dropping it meant silence.
+    // The queue is short (MAX_QUEUE), so this cannot build up a long lag.
+    if (currentMessage && msg.id === currentMessage.id) {
+      currentMessage["audio_" + lang] = msg["audio_" + lang];
+      delete currentMessage.audio_pending;
+      awaitingAudioFor = null;
+    }
+    if (voiceOn && msg["audio_" + lang]) playServerAudio(msg["audio_" + lang]);
+    return;
+  }
   if (!currentMessage || msg.id !== currentMessage.id) return;   // stale
   currentMessage["audio_" + lang] = msg["audio_" + lang];
   delete currentMessage.audio_pending;
