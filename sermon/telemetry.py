@@ -56,7 +56,9 @@ def is_enabled() -> bool:
     PERSONAL BUILD (throwaway branch, not merged to develop): defaulted to
     off instead - this copy is meant to make zero network calls of any
     kind, not just work offline for translation."""
-    return _load_state().get("enabled", False)
+    # IGBO TEST BUILD: telemetry off entirely - the dashboard toggle cannot
+    # turn it back on.
+    return False
 
 
 def set_enabled(value: bool) -> None:

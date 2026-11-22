@@ -216,17 +216,17 @@ def _wait_for_server(timeout: float = 60.0) -> bool:
 # IGBO TEST BUILD: a time-limited test copy. Stops at the start of Sunday
 # 29 November 2026, Nigeria time (UTC+1) - i.e. 23:00 UTC on the 28th.
 #
-# The PC's clock is deliberately NOT trusted: setting it back would keep
-# the copy alive forever. Time comes from a certificate-checked HTTPS Date
-# header instead - our own server first, then large sites as fallbacks
-# (our Fly host has had TLS trouble from this connection). That means this
-# test copy needs internet to OPEN; translation itself stays offline. If
-# no source answers it refuses to open, or going offline would be the new
-# way around the limit.
+# Works offline. The PC clock alone is not trusted (setting it back would
+# keep the copy alive), so it is checked alongside a clock-rollback check
+# and a usage counter (below), plus internet time whenever a connection
+# happens to be available - at startup, and every few minutes from both the
+# app and the background counter. Internet time is a certificate-checked
+# HTTPS Date header from large public sites; the telemetry server is NOT
+# used. Once internet time shows the copy has expired, that is remembered,
+# so going back offline or winding the clock back does not undo it.
 TEST_EXPIRES_AT_UTC = __import__("datetime").datetime(
     2026, 11, 28, 23, 0, tzinfo=__import__("datetime").timezone.utc)
 _TIME_SOURCES = (
-    "https://neo-language-box-telemetry.fly.dev/v1/manifest",
     "https://www.cloudflare.com/",
     "https://www.google.com/",
     "https://www.microsoft.com/",
@@ -234,15 +234,19 @@ _TIME_SOURCES = (
 )
 
 
-def _trusted_utc_now():
-    """Current UTC time from the first HTTPS source that answers, or None."""
+INTERNET_CHECK_SECONDS = 10 * 60          # try internet time this often
+
+
+def _trusted_utc_now(timeout: float = 6.0):
+    """Current UTC time from the first HTTPS source that answers, or None
+    (offline, or nothing answered)."""
     import email.utils
     import urllib.request
     for url in _TIME_SOURCES:
         try:
             req = urllib.request.Request(url, method="HEAD",
                                          headers={"User-Agent": "NeoLanguageBox"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 stamp = resp.headers.get("Date")
             if stamp:
                 return email.utils.parsedate_to_datetime(stamp)
@@ -282,8 +286,11 @@ def _load_counter() -> dict:
             copies.append(json.loads(winreg.QueryValueEx(k, "state")[0]))
     except Exception:
         pass
-    state = {"installed_at": None, "last_seen": 0.0, "counted": 0.0}
+    state = {"installed_at": None, "last_seen": 0.0, "counted": 0.0,
+             "internet_checked": 0.0, "expired": False}
     for c in copies:
+        state["expired"] = state["expired"] or bool(c.get("expired"))
+        state["internet_checked"] = max(state["internet_checked"], float(c.get("internet_checked") or 0))
         if c.get("installed_at"):
             state["installed_at"] = min(filter(None, [state["installed_at"], c["installed_at"]]))
         state["last_seen"] = max(state["last_seen"], float(c.get("last_seen") or 0))
@@ -305,6 +312,17 @@ def _save_counter(state: dict) -> None:
         pass
 
 
+def _record_internet_time(state: dict) -> None:
+    """If online, fold internet time into the state. Never raises."""
+    trusted = _trusted_utc_now()
+    if trusted is None:
+        return
+    state["last_seen"] = max(state["last_seen"], trusted.timestamp())
+    state["internet_checked"] = trusted.timestamp()
+    if trusted >= TEST_EXPIRES_AT_UTC:
+        state["expired"] = True
+
+
 def _run_counter() -> int:
     """The background counter loop. One instance per user session."""
     import ctypes
@@ -316,14 +334,19 @@ def _run_counter() -> int:
     if not state["installed_at"]:
         state["installed_at"] = time.time()
     state["last_seen"] = max(state["last_seen"], time.time())
+    _record_internet_time(state)
     _save_counter(state)
     last = time.monotonic()
+    next_online = time.monotonic() + INTERNET_CHECK_SECONDS
     while True:
         time.sleep(60)
         now = time.monotonic()
         state = _load_counter()
         state["counted"] += max(0.0, now - last)
         state["last_seen"] = max(state["last_seen"], time.time())
+        if now >= next_online:
+            _record_internet_time(state)
+            next_online = now + INTERNET_CHECK_SECONDS
         _save_counter(state)
         last = now
     del handle
@@ -343,29 +366,53 @@ def _ensure_counter_running() -> None:
         print(f"[desktop] could not start usage counter: {exc}")
 
 
-def _test_copy_problem():
-    """None if this test copy may run, else "expired" / "clock" / "offline".
-    Every check must pass: PC clock, clock-rollback, usage counter, and the
-    internet time (the one a user cannot change)."""
+def _test_copy_problem(check_internet: bool = True):
+    """None if this test copy may run, else "expired" or "clock".
+    Checks: an expiry already seen online, the PC clock, clock-rollback, the
+    usage counter, and - if a connection is available - internet time.
+    Being offline is not a problem in itself."""
     state = _load_counter()
     pc_now = time.time()
     if not state["installed_at"]:
         state["installed_at"] = pc_now
-    cutoff = TEST_EXPIRES_AT_UTC.timestamp()
-    if pc_now >= cutoff:
-        return "expired"
-    if state["last_seen"] and pc_now < state["last_seen"] - CLOCK_ROLLBACK_TOLERANCE:
-        return "clock"
-    if state["counted"] >= COUNTER_LIMIT_SECONDS:
-        return "expired"
-    trusted = _trusted_utc_now()
-    if trusted is None:
-        return "offline"
-    if trusted >= TEST_EXPIRES_AT_UTC:
-        return "expired"
-    state["last_seen"] = max(state["last_seen"], pc_now, trusted.timestamp())
+    if check_internet:
+        _record_internet_time(state)
+    problem = None
+    if state["expired"] or pc_now >= TEST_EXPIRES_AT_UTC.timestamp():
+        problem = "expired"
+    elif state["counted"] >= COUNTER_LIMIT_SECONDS:
+        problem = "expired"
+    elif state["last_seen"] and pc_now < state["last_seen"] - CLOCK_ROLLBACK_TOLERANCE:
+        problem = "clock"
+    else:
+        state["last_seen"] = max(state["last_seen"], pc_now)
     _save_counter(state)
-    return None
+    return problem
+
+
+def _watch_test_copy(window) -> None:
+    """While the app runs, re-check every few minutes (internet time when
+    online). If the copy has expired, pause translation and show the
+    ended page."""
+    def _loop():
+        while True:
+            time.sleep(INTERNET_CHECK_SECONDS)
+            try:
+                problem = _test_copy_problem()
+            except Exception:
+                continue
+            if problem:
+                print(f"[desktop] test copy stopped while running: {problem}")
+                try:
+                    req = urllib.request.Request(
+                        f"http://{LOOPBACK_HOST}:{LOOPBACK_PORT}/api/stop",
+                        data=b"", method="POST")
+                    urllib.request.urlopen(req, timeout=3).close()
+                except Exception:
+                    pass
+                window.load_html(_expired_page(reason=problem))
+                return
+    threading.Thread(target=_loop, daemon=True, name="test-copy-watch").start()
 
 
 def main() -> int:
@@ -460,6 +507,7 @@ def main() -> int:
             print(f"[desktop] test copy refused to start: {problem}")
             window.load_html(_expired_page(reason=problem))
             return
+        _watch_test_copy(window)
         # Verify BEFORE starting the server: a damaged model does not fail
         # cleanly, so it is far better to stop here with a list of files than
         # to load it and serve garbage.
@@ -552,13 +600,6 @@ def _expired_page(reason: str = "expired") -> str:
                 "will not open until the date and time are correct.</p>"
                 "<p>Set the clock to the correct date and time, then open the "
                 "app again.</p>")
-    elif reason == "offline":
-        title = "Connect to the internet to open this test version"
-        body = ("<p>Neo Language Box - Igbo Test is a time-limited test copy. It "
-                "checks the date online each time it opens, so it needs an "
-                "internet connection to start. Translation itself still works "
-                "offline once it is running.</p><p>Connect this computer to the "
-                "internet, then open the app again.</p>")
     else:
         title = "This Igbo test version has ended"
         body = ("<p>Neo Language Box - Igbo Test was a time-limited test copy and "
