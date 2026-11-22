@@ -213,8 +213,22 @@ def _wait_for_server(timeout: float = 60.0) -> bool:
     return False
 
 
+# IGBO TEST BUILD: a time-limited test copy. Works through the end of
+# Sunday 29 November 2026 (local time), so it covers that week's service,
+# and refuses to start from Monday 30 November. Checked against the PC's
+# own clock - a soft limit, not copy protection.
+TEST_EXPIRES_ON = __import__("datetime").date(2026, 11, 30)
+
+
 def main() -> int:
     global LOOPBACK_PORT
+    import datetime
+    if datetime.date.today() >= TEST_EXPIRES_ON:
+        import webview
+        webview.create_window(APP_TITLE, html=_expired_page(), width=WINDOW_WIDTH,
+                              height=WINDOW_HEIGHT, resizable=True, confirm_close=False)
+        webview.start()
+        return 1
     # Flush diagnostics line by line. Redirected output is block-buffered, and
     # the frozen app ignores PYTHONUNBUFFERED, so anything printed just before a
     # hang or a forced close was silently lost - exactly when it matters.
@@ -380,6 +394,27 @@ def _loading_page() -> str:
      minute with every language enabled.</p>
 </div>
 """.replace("%%", "%")
+
+
+def _expired_page() -> str:
+    return """<!doctype html>
+<meta charset="utf-8">
+<style>
+  body { margin:0; background:#0b0b0b; color:#e0e0e0;
+         font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+         display:flex; align-items:center; justify-content:center; height:100vh; }
+  .box { max-width:520px; padding:34px; text-align:center; }
+  h1 { color:#e8b53a; font-size:21px; margin:0 0 14px; }
+  p  { color:#b0b0b0; line-height:1.6; font-size:14px; }
+</style>
+<div class="box">
+  <h1>This Igbo test version has ended</h1>
+  <p>Neo Language Box - Igbo Test was a time-limited test copy and stopped
+     working after Sunday 29 November 2026.</p>
+  <p>Thank you for testing. Ask the person who gave you this copy for the
+     current version of Neo Language Box.</p>
+</div>
+"""
 
 
 def _models_missing_page(models: Path, missing: list) -> str:

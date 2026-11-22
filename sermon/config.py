@@ -340,7 +340,7 @@ class TTSConfig:
     # down only those two rather than every language.
     length_scale_overrides: dict[str, float] = field(default_factory=lambda: {
         "yo": 1.2,
-        "ig": 1.2,
+        "ig": 1.08,   # IGBO TEST BUILD: the "Faster" sample (1.2 x 0.9), chosen by ear
     })
     # noise_scale/noise_scale_w control a VITS voice's prosodic variation -
     # higher generally reads as more natural/expressive, lower as flatter or
