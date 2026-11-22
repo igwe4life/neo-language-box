@@ -124,8 +124,15 @@ def require_models(cfg: AppConfig, need_stt: bool = True, need_tts: bool = False
         if not (d / marker).exists():
             missing.append(f"{cfg.stt.engine} '{cfg.stt.model}' at {d}")
     # Only the PRIMARY target is required. Secondary targets fall through to
-    # available_targets(), which just skips missing ones.
-    if not (cfg.mt_dir / "model.bin").exists():
+    # available_targets(), which just skips missing ones. A primary served by
+    # the shared NLLB model has no OPUS-MT folder of its own - checking for
+    # one made an Igbo-first build (the Igbo test copy) refuse to start.
+    from sermon.config import NLLB_TARGETS
+    if cfg.mt.target in NLLB_TARGETS:
+        nllb = cfg.models_dir / "nllb-1.3b"
+        if not (nllb / "model.bin").exists():
+            missing.append(f"NLLB-200 (for en-{cfg.mt.target}) at {nllb}")
+    elif not (cfg.mt_dir / "model.bin").exists():
         missing.append(f"OPUS-MT en-{cfg.mt.target} at {cfg.mt_dir}")
     if need_tts and not cfg.tts_model.exists():
         missing.append(f"Piper voice '{cfg.tts.voice}' at {cfg.tts_model}")
