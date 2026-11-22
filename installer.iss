@@ -31,8 +31,8 @@
 ; * Desktop + Start Menu shortcuts, both point at the .exe.
 ; * SetupIconFile omitted deliberately; installer uses a generic icon.
 
-#define AppName        "Neo Language Box"
-#define AppShortName   "NeoLanguageBox"
+#define AppName        "Neo Language Box - Igbo Test"
+#define AppShortName   "NeoLanguageBoxIgboTest"
 ; Kept in sync by hand with sermon/config.py's APP_VERSION - Inno Setup
 ; cannot read that file at build time. Bump both together, and update
 ; telemetry-server/manifest.json's app_version too so update pings fire.
@@ -44,7 +44,9 @@
 ; Unchanged across the rename from "Sermon Translation Speaker". Windows keys
 ; an installed program on this GUID, so keeping it makes this installer an
 ; UPGRADE of an existing install rather than a second app beside it.
-AppId={{A9C8E7B2-4F3D-4A8C-9E12-8F5B2C4D7E19}
+; IGBO TEST BUILD: a DIFFERENT AppId on purpose - this is a separate app
+; installed beside Neo Language Box, and must never upgrade or replace it.
+AppId={{5D2B7C1E-8A43-4F6E-B9D1-3C7A2E9F4B60}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
@@ -55,7 +57,7 @@ DisableProgramGroupPage=yes
 DisableDirPage=no
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-OutputBaseFilename=NeoLanguageBoxSetup
+OutputBaseFilename=NeoLanguageBoxIgboTestSetup
 OutputDir=dist
 ; Compression is required for size (see the limit above), but these models are
 ; already quantised and only shrink 6-20% at any setting, so /max buys almost
@@ -69,15 +71,14 @@ SolidCompression=no
 ; DiskSpanning path the comment at the top of this file anticipated.
 ; Setup.exe plus the .bin slices must all be kept together and shipped as
 ; a set; the installer itself asks for the next one as it needs it.
-DiskSpanning=yes
-DiskSliceSize=2000000000
+; IGBO TEST BUILD: one language fits Inno's single-file limit - one .exe.
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#AppExeName}
 LicenseFile=
 ; On a machine that already has an old install, this keeps using that folder
 ; (SermonTranslation, then NeoSermon) so a models folder already copied there
 ; stays valid. A fresh install gets the new NeoLanguageBox folder.
-UsePreviousAppDir=yes
+UsePreviousAppDir=no
 CloseApplications=yes
 RestartApplications=no
 ; Keep the "Ready to install" page: with ~4 GB to unpack, it is worth one

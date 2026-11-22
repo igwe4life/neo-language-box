@@ -197,34 +197,10 @@ LANGUAGES = {
     "ur": {"native": "اردو",       "flag": "\U0001F1F5\U0001F1F0", "speech": "ur-PK", "rtl": True},
 }
 
-DEFAULT_TARGETS = ["fr", "es", "pt", "de", "it", "ru", "ar", "hi", "zh",
-                   "sw", "ig", "yo", "ha", "id", "tr"]
-# PERSONAL BUILD (throwaway branch, not merged to develop): narrowed from 18
-# to 15 languages per request - first 15 of the full list below, dropping
-# pl/bn/ur. Heads up: the 12-language personal build already showed most
-# Piper voices failing to load with ONNXRuntimeError "bad allocation" (real
-# RAM exhaustion on an 8 GB machine, loading all voices concurrently) - 15
-# will very likely hit the same, or worse. Not fatal (translation still
-# works; only audio synthesis gets disabled for whichever voices fail), but
-# expect it.
-#
-# Full default-target list, restored on develop:
-# ["fr", "es", "pt", "de", "it", "ru", "ar", "hi", "zh",
-#  "sw", "ig", "yo", "ha", "id", "tr", "pl", "bn", "ur"]
-# Igbo was pulled from the default set 2026-10-04 while investigating reports
-# of it sounding wrong in the field, and restored 2026-11-06 after the actual
-# cause (BroadcastSink.emit() blocking the pipeline on synthesis - see the
-# 2026-10-04 commit fixing that) was found and fixed. Re-tested via
-# `python run.py doctor` on restoring it; watch for a recurrence of the
-# original symptoms (a wrong voice cutting in, hangs) under real load.
-#
-# Korean and Vietnamese are pulled from the default set 2026-11-06, the
-# first real test of the language-pack system (sermon/langpacks.py): both
-# remain fully configured below (LANGUAGES/ALL_VOICES/NLLB_TARGETS) and
-# both already have a built, uploaded, working pack - see
-# telemetry-server/manifest.json and scripts/build_language_pack.py. A
-# fresh install no longer bundles either; downloading the pack is now the
-# only way to get them, same as any language added from here on.
+DEFAULT_TARGETS = ["ig"]
+# IGBO TEST BUILD (throwaway branch "igbo-test", never merged): a separate
+# app for Igbo listeners to judge the Igbo voice and its pace (dashboard
+# Voice Speed setting). Installs beside Neo Language Box, not over it.
 
 # Targets served by NLLB-200 rather than a bilingual OPUS-MT model, mapped to
 # NLLB's own language tags. OPUS-MT does publish models for all four, but they
@@ -377,7 +353,7 @@ class TTSConfig:
     # onnxruntime threads per VITS voice (Igbo/Yoruba/Hausa). 1 is right when
     # several voices synthesise at once; a single-voice build can afford 2,
     # measured at ~20% faster rendering for Igbo on a 4-thread laptop.
-    vits_threads: int = 1
+    vits_threads: int = 2      # IGBO TEST BUILD: one voice, free cores
     output_device: int | None = None
     queue_size: int = 2               # pending phrases; oldest dropped when full
     # Playing translation out of the laptop speakers puts it straight back into

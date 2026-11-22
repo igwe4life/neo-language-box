@@ -31,7 +31,7 @@ from sermon.config import APP_VERSION  # noqa: E402
 _REMOTE_TRIGGER_POLL_SECONDS = 900
 
 
-APP_TITLE = "Neo Language Box"
+APP_TITLE = "Neo Language Box - Igbo Test"
 LOOPBACK_HOST = "127.0.0.1"
 PREFERRED_PORT = 8000
 WINDOW_WIDTH = 980
