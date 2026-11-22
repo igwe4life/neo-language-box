@@ -246,6 +246,7 @@
     padding: 10px 0; border-bottom: 1px solid var(--border-soft); gap: 12px;
   }
   .session-row:last-child { border-bottom: none; }
+  .speed-select { width: auto; padding: 4px 8px; font-size: 13px; font-weight: 600; }
   .session-row .k { font-size: 12.5px; color: var(--muted); font-weight: 600; }
   .session-row .v { font-size: 13.5px; color: var(--fg); font-weight: 600; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
   .session-row .v.mode { color: var(--green); }
@@ -533,6 +534,15 @@
       <div class="session-row"><span class="k">Languages</span><span class="v" id="s-langs">&mdash;</span></div>
       <div class="session-row"><span class="k">Stream Time</span><span class="v" id="s-uptime">00:00:00</span></div>
       <div class="session-row"><span class="k">Mode</span><span class="v mode">Offline Translation</span></div>
+      <div class="session-row"><span class="k">Voice Speed</span>
+        <select class="speed-select" id="voice-speed" title="How fast the translated voices speak">
+          <option value="1.3">Much slower</option>
+          <option value="1.15">Slower</option>
+          <option value="1">Normal</option>
+          <option value="0.9">Faster</option>
+          <option value="0.8">Much faster</option>
+        </select>
+      </div>
     </div>
   </div>
 
@@ -830,6 +840,13 @@ srcKind.addEventListener("change", () => { fillDeviceList(); applySource(); });
 srcDevice.addEventListener("change", applySource);
 loadDevices();
 
+// Takes effect from the next sentence; audio already made keeps its pace.
+$("voice-speed").addEventListener("change", async ev => {
+  try {
+    await fetch("/api/voice-speed?value=" + encodeURIComponent(ev.target.value), { method: "POST" });
+  } catch {}
+});
+
 // -------------------------------------------------------------- media player
 // Plays a local MP3/MP4 in this window. Its audio goes two ways: out of the
 // speakers as usual, and - tapped by an AudioWorklet - to the server's /mic
@@ -1064,6 +1081,9 @@ async function poll() {
     }
     $("s-langs").textContent = s.languages_active ?? "—";
     $("s-uptime").textContent = formatUptime(s.uptime_seconds || 0);
+    const speedSel = $("voice-speed");
+    if (document.activeElement !== speedSel && s.voice_speed != null)
+      speedSel.value = String(+s.voice_speed);
 
     renderRecordingState(s.recording);
     $("reports-badge").hidden = !(s.reports_count > 0);

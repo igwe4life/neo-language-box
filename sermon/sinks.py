@@ -296,7 +296,12 @@ class BroadcastSink(Sink):
         voices = {lang: self.speakers.get(lang) for lang in pending}
         pending = [lang for lang in pending if voices[lang] is not None]
 
+        speed = getattr(self.broadcaster, "voice_speed", 1.0)
+
         def _synthesize(lang):
+            # One pool task per language per utterance, and utterances are
+            # handled one at a time, so no voice is ever used concurrently.
+            voices[lang].set_speed(speed)
             speech = voices[lang].synthesize(result.translations[lang])
             return lang, speech
 

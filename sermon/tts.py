@@ -42,6 +42,10 @@ class Speaker(ABC):
     def synthesize(self, text: str) -> Speech:
         ...
 
+    def set_speed(self, multiplier: float) -> None:
+        """Scale this voice's pace from the operator dashboard: >1 slower,
+        <1 faster, relative to the voice's own configured length_scale."""
+
 
 class PiperSpeaker(Speaker):
     def __init__(self, model_path: str | Path, cfg: TTSConfig):
@@ -62,6 +66,18 @@ class PiperSpeaker(Speaker):
             normalize_audio=True,
         )
         self.sample_rate = self.voice.config.sample_rate
+        self._speed = 1.0
+
+    def set_speed(self, multiplier: float) -> None:
+        if multiplier == self._speed:
+            return
+        from piper import SynthesisConfig
+        self._speed = multiplier
+        self.syn_config = SynthesisConfig(
+            length_scale=self.cfg.length_scale * multiplier,
+            volume=self.cfg.volume,
+            normalize_audio=True,
+        )
 
     def synthesize(self, text: str) -> Speech:
         started = time.perf_counter()
@@ -126,9 +142,10 @@ class VitsSpeaker(Speaker):
         # concurrent sessions fight each other. One thread each, bounded by
         # the sink's own worker pool, is well-behaved concurrency instead.
         opts = ort.SessionOptions()
-        opts.intra_op_num_threads = 1
+        opts.intra_op_num_threads = max(1, cfg.vits_threads)
         self.session = ort.InferenceSession(
             str(onnx), sess_options=opts, providers=["CPUExecutionProvider"])
+        self.length_scale = cfg.length_scale
         names = {i.name for i in self.session.get_inputs()}
         self.style = "coqui" if "input" in names else "mms"
 
@@ -142,6 +159,9 @@ class VitsSpeaker(Speaker):
             self.vocab = self._read_tokens(d / "tokens.txt")
             self.blank = 0
             self.sample_rate = 16000
+
+    def set_speed(self, multiplier: float) -> None:
+        self.length_scale = self.cfg.length_scale * multiplier
 
     @staticmethod
     def _read_tokens(path: Path) -> dict:
@@ -174,7 +194,7 @@ class VitsSpeaker(Speaker):
                 "input": x,
                 "input_lengths": np.array([x.shape[1]], dtype=np.int64),
                 "scales": np.array(
-                    [self.cfg.noise_scale, self.cfg.length_scale, self.cfg.noise_scale_w],
+                    [self.cfg.noise_scale, self.length_scale, self.cfg.noise_scale_w],
                     dtype=np.float32),
             })[0]
         else:
@@ -182,7 +202,7 @@ class VitsSpeaker(Speaker):
                 "x": x,
                 "x_length": np.array([x.shape[1]], dtype=np.int64),
                 "noise_scale": np.array([self.cfg.noise_scale], dtype=np.float32),
-                "length_scale": np.array([self.cfg.length_scale],
+                "length_scale": np.array([self.length_scale],
                                          dtype=np.float32),
                 "noise_scale_w": np.array([self.cfg.noise_scale_w], dtype=np.float32),
             })[0]
