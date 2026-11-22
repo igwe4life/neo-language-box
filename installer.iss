@@ -125,7 +125,7 @@ Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait
 [UninstallRun]
 ; Stop only THIS app's counter - the main Neo Language Box shares the exe
 ; name, so a plain taskkill /IM would close it too.
-Filename: "powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -Command ""Get-Process NeoLanguageBox -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -like '{app}\*' }} | Stop-Process -Force"""; Flags: runhidden; RunOnceId: "StopIgboTestCounter"
+Filename: "powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -Command ""Get-Process NeoLanguageBox -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -like '{app}\*' } | Stop-Process -Force"""; Flags: runhidden; RunOnceId: "StopIgboTestCounter"
 
 [InstallDelete]
 ; The executable was renamed with the app, twice now. An upgrade over an
