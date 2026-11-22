@@ -94,10 +94,18 @@ def _missing_models(models: Path) -> list:
     """
     needed = [
         ("speech recognition", models / "parakeet-0.6b" / "encoder.int8.onnx"),
-        ("translation (French)", models / "mt" / "opus-mt-en-fr" / "model.bin"),
         ("voices", models / "tts"),
     ]
-    return [label for label, path in needed if not path.exists()]
+    missing = [label for label, path in needed if not path.exists()]
+    # ANY translation model will do - this used to demand French
+    # specifically, so a build without French (the Igbo-only test copy, which
+    # has only the shared NLLB model) refused to start with "models could not
+    # be found". Which languages actually load is run.py's job.
+    has_translation = ((models / "nllb-1.3b" / "model.bin").exists()
+                       or any(models.glob("mt/*/model.bin")))
+    if not has_translation:
+        missing.insert(1, "translation")
+    return missing
 
 
 DEFAULT_STT = "parakeet-0.6b"
