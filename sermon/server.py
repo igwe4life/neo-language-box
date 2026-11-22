@@ -99,6 +99,9 @@ class Broadcaster:
         # custom slug has been set; /listeners/<anything> still works (see the
         # route), this only controls what the dashboard suggests for sharing.
         self.listener_slug: str = ""
+        # Pace of every server voice, set from the dashboard: a multiplier on
+        # each voice's own length_scale (>1 slower, <1 faster).
+        self.voice_speed: float = 1.0
         # The language actually being spoken/transcribed. Only "en" has a
         # bundled speech-recognition model today (see /api/source-language),
         # so this exists mainly as the real, honest plumbing for when a
@@ -413,6 +416,7 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
                 "uptime_seconds": round(broadcaster.uptime_seconds, 1),
                 "session": broadcaster.session_meta,
                 "listener_slug": broadcaster.listener_slug,
+                "voice_speed": broadcaster.voice_speed,
                 "recording": (broadcaster.recorder.status()
                              if broadcaster.recorder else {"active": False}),
                 "reports_count": len(broadcaster.reports),
@@ -507,6 +511,22 @@ def _make_process_request(broadcaster: Broadcaster, mic_source=None, binds=None)
                 ("Content-Type", "application/json"),
                 ("Content-Length", str(len(body))),
                 ("Cache-Control", "no-store"),
+            ]), body)
+        if path == "/api/voice-speed" and request.method == "POST":
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(request.path).query)
+            try:
+                value = float((q.get("value") or [""])[0])
+                resp = {"ok": 0.6 <= value <= 1.6}
+                if resp["ok"]:
+                    broadcaster.voice_speed = value
+            except ValueError:
+                resp = {"ok": False}
+            resp["value"] = broadcaster.voice_speed
+            body = json.dumps(resp).encode("utf-8")
+            return Response(200, "OK", Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
             ]), body)
         if path == "/api/devices":
             # Both backends the operator can pick between. Enumeration can

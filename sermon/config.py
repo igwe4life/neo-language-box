@@ -374,6 +374,10 @@ class TTSConfig:
     noise_scale: float = 0.667
     noise_scale_w: float = 0.8
     volume: float = 1.0
+    # onnxruntime threads per VITS voice (Igbo/Yoruba/Hausa). 1 is right when
+    # several voices synthesise at once; a single-voice build can afford 2,
+    # measured at ~20% faster rendering for Igbo on a 4-thread laptop.
+    vits_threads: int = 1
     output_device: int | None = None
     queue_size: int = 2               # pending phrases; oldest dropped when full
     # Playing translation out of the laptop speakers puts it straight back into
