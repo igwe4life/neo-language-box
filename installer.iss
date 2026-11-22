@@ -111,8 +111,21 @@ Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
 Name: "{group}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
+[Registry]
+; IGBO TEST BUILD: the usage counter starts at every login. Its counted state
+; lives under the same key and is deliberately NOT removed on uninstall, so
+; uninstalling and reinstalling does not reset it.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "NeoLanguageBoxIgboTestCounter"; ValueData: """{app}\{#AppExeName}"" --counter"; Flags: uninsdeletevalue
+
 [Run]
+; Start the usage counter straight after installation.
+Filename: "{app}\{#AppExeName}"; Parameters: "--counter"; Flags: nowait runhidden
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+; Stop only THIS app's counter - the main Neo Language Box shares the exe
+; name, so a plain taskkill /IM would close it too.
+Filename: "powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -Command ""Get-Process NeoLanguageBox -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -like '{app}\*' }} | Stop-Process -Force"""; Flags: runhidden; RunOnceId: "StopIgboTestCounter"
 
 [InstallDelete]
 ; The executable was renamed with the app, twice now. An upgrade over an

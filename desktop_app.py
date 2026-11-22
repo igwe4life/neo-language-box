@@ -213,22 +213,163 @@ def _wait_for_server(timeout: float = 60.0) -> bool:
     return False
 
 
-# IGBO TEST BUILD: a time-limited test copy. Works through the end of
-# Sunday 29 November 2026 (local time), so it covers that week's service,
-# and refuses to start from Monday 30 November. Checked against the PC's
-# own clock - a soft limit, not copy protection.
-TEST_EXPIRES_ON = __import__("datetime").date(2026, 11, 30)
+# IGBO TEST BUILD: a time-limited test copy. Stops at the start of Sunday
+# 29 November 2026, Nigeria time (UTC+1) - i.e. 23:00 UTC on the 28th.
+#
+# The PC's clock is deliberately NOT trusted: setting it back would keep
+# the copy alive forever. Time comes from a certificate-checked HTTPS Date
+# header instead - our own server first, then large sites as fallbacks
+# (our Fly host has had TLS trouble from this connection). That means this
+# test copy needs internet to OPEN; translation itself stays offline. If
+# no source answers it refuses to open, or going offline would be the new
+# way around the limit.
+TEST_EXPIRES_AT_UTC = __import__("datetime").datetime(
+    2026, 11, 28, 23, 0, tzinfo=__import__("datetime").timezone.utc)
+_TIME_SOURCES = (
+    "https://neo-language-box-telemetry.fly.dev/v1/manifest",
+    "https://www.cloudflare.com/",
+    "https://www.google.com/",
+    "https://www.microsoft.com/",
+    "https://github.com/",
+)
+
+
+def _trusted_utc_now():
+    """Current UTC time from the first HTTPS source that answers, or None."""
+    import email.utils
+    import urllib.request
+    for url in _TIME_SOURCES:
+        try:
+            req = urllib.request.Request(url, method="HEAD",
+                                         headers={"User-Agent": "NeoLanguageBox"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                stamp = resp.headers.get("Date")
+            if stamp:
+                return email.utils.parsedate_to_datetime(stamp)
+        except Exception:
+            continue
+    return None
+
+
+# ---- usage counter (IGBO TEST BUILD) ------------------------------------
+# A small background utility, started by the installer and at every login
+# (`NeoLanguageBox.exe --counter`), that counts how long this PC has been on
+# since installation. It measures elapsed time with a monotonic timer, which
+# changing the PC clock does not affect, and remembers the latest clock time
+# it has seen, so a clock wound backwards is caught. State is kept in BOTH
+# the registry and a file beside the app; the larger values win, so deleting
+# one copy does not reset it. Uninstalling keeps the registry copy, so a
+# reinstall does not reset it either.
+COUNTER_LIMIT_SECONDS = 7 * 24 * 3600      # 7 days of PC-on time since install
+CLOCK_ROLLBACK_TOLERANCE = 3600            # allow for a DST / time-sync nudge
+_COUNTER_REG_KEY = r"Software\NeoLanguageBoxIgboTest"
+_COUNTER_MUTEX = "NeoLanguageBoxIgboTestCounter"
+
+
+def _counter_file() -> Path:
+    return _bundled_root() / "usage-counter.json"
+
+
+def _load_counter() -> dict:
+    copies = []
+    try:
+        copies.append(json.loads(_counter_file().read_text(encoding="utf-8")))
+    except Exception:
+        pass
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _COUNTER_REG_KEY) as k:
+            copies.append(json.loads(winreg.QueryValueEx(k, "state")[0]))
+    except Exception:
+        pass
+    state = {"installed_at": None, "last_seen": 0.0, "counted": 0.0}
+    for c in copies:
+        if c.get("installed_at"):
+            state["installed_at"] = min(filter(None, [state["installed_at"], c["installed_at"]]))
+        state["last_seen"] = max(state["last_seen"], float(c.get("last_seen") or 0))
+        state["counted"] = max(state["counted"], float(c.get("counted") or 0))
+    return state
+
+
+def _save_counter(state: dict) -> None:
+    raw = json.dumps(state)
+    try:
+        _counter_file().write_text(raw, encoding="utf-8")
+    except Exception:
+        pass
+    try:
+        import winreg
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, _COUNTER_REG_KEY) as k:
+            winreg.SetValueEx(k, "state", 0, winreg.REG_SZ, raw)
+    except Exception:
+        pass
+
+
+def _run_counter() -> int:
+    """The background counter loop. One instance per user session."""
+    import ctypes
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.CreateMutexW(None, False, _COUNTER_MUTEX)
+    if kernel32.GetLastError() == 183:          # ERROR_ALREADY_EXISTS
+        return 0
+    state = _load_counter()
+    if not state["installed_at"]:
+        state["installed_at"] = time.time()
+    state["last_seen"] = max(state["last_seen"], time.time())
+    _save_counter(state)
+    last = time.monotonic()
+    while True:
+        time.sleep(60)
+        now = time.monotonic()
+        state = _load_counter()
+        state["counted"] += max(0.0, now - last)
+        state["last_seen"] = max(state["last_seen"], time.time())
+        _save_counter(state)
+        last = now
+    del handle
+
+
+def _ensure_counter_running() -> None:
+    """Start the counter if it is not already running (installer or login
+    should have started it; this covers a user who killed it)."""
+    import subprocess
+    args = [sys.executable, "--counter"]
+    if not getattr(sys, "frozen", False):
+        args = [sys.executable, str(Path(__file__).resolve()), "--counter"]
+    try:
+        subprocess.Popen(args, creationflags=0x00000008 | 0x08000000,  # DETACHED, NO_WINDOW
+                         close_fds=True)
+    except Exception as exc:
+        print(f"[desktop] could not start usage counter: {exc}")
+
+
+def _test_copy_problem():
+    """None if this test copy may run, else "expired" / "clock" / "offline".
+    Every check must pass: PC clock, clock-rollback, usage counter, and the
+    internet time (the one a user cannot change)."""
+    state = _load_counter()
+    pc_now = time.time()
+    if not state["installed_at"]:
+        state["installed_at"] = pc_now
+    cutoff = TEST_EXPIRES_AT_UTC.timestamp()
+    if pc_now >= cutoff:
+        return "expired"
+    if state["last_seen"] and pc_now < state["last_seen"] - CLOCK_ROLLBACK_TOLERANCE:
+        return "clock"
+    if state["counted"] >= COUNTER_LIMIT_SECONDS:
+        return "expired"
+    trusted = _trusted_utc_now()
+    if trusted is None:
+        return "offline"
+    if trusted >= TEST_EXPIRES_AT_UTC:
+        return "expired"
+    state["last_seen"] = max(state["last_seen"], pc_now, trusted.timestamp())
+    _save_counter(state)
+    return None
 
 
 def main() -> int:
     global LOOPBACK_PORT
-    import datetime
-    if datetime.date.today() >= TEST_EXPIRES_ON:
-        import webview
-        webview.create_window(APP_TITLE, html=_expired_page(), width=WINDOW_WIDTH,
-                              height=WINDOW_HEIGHT, resizable=True, confirm_close=False)
-        webview.start()
-        return 1
     # Flush diagnostics line by line. Redirected output is block-buffered, and
     # the frozen app ignores PYTHONUNBUFFERED, so anything printed just before a
     # hang or a forced close was silently lost - exactly when it matters.
@@ -312,6 +453,13 @@ def main() -> int:
     window.events.closing += _on_closing
 
     def _startup():
+        _status("Checking this test copy is still valid...")
+        _ensure_counter_running()
+        problem = _test_copy_problem()
+        if problem:
+            print(f"[desktop] test copy refused to start: {problem}")
+            window.load_html(_expired_page(reason=problem))
+            return
         # Verify BEFORE starting the server: a damaged model does not fail
         # cleanly, so it is far better to stop here with a list of files than
         # to load it and serve garbage.
@@ -396,7 +544,27 @@ def _loading_page() -> str:
 """.replace("%%", "%")
 
 
-def _expired_page() -> str:
+def _expired_page(reason: str = "expired") -> str:
+    if reason == "clock":
+        title = "Check this computer's date and time"
+        body = ("<p>This computer's clock appears to have been set back. "
+                "Neo Language Box - Igbo Test is a time-limited test copy and "
+                "will not open until the date and time are correct.</p>"
+                "<p>Set the clock to the correct date and time, then open the "
+                "app again.</p>")
+    elif reason == "offline":
+        title = "Connect to the internet to open this test version"
+        body = ("<p>Neo Language Box - Igbo Test is a time-limited test copy. It "
+                "checks the date online each time it opens, so it needs an "
+                "internet connection to start. Translation itself still works "
+                "offline once it is running.</p><p>Connect this computer to the "
+                "internet, then open the app again.</p>")
+    else:
+        title = "This Igbo test version has ended"
+        body = ("<p>Neo Language Box - Igbo Test was a time-limited test copy and "
+                "stopped working at the start of Sunday 29 November 2026.</p>"
+                "<p>Thank you for testing. Ask the person who gave you this copy "
+                "for the current version of Neo Language Box.</p>")
     return """<!doctype html>
 <meta charset="utf-8">
 <style>
@@ -408,11 +576,8 @@ def _expired_page() -> str:
   p  { color:#b0b0b0; line-height:1.6; font-size:14px; }
 </style>
 <div class="box">
-  <h1>This Igbo test version has ended</h1>
-  <p>Neo Language Box - Igbo Test was a time-limited test copy and stopped
-     working after Sunday 29 November 2026.</p>
-  <p>Thank you for testing. Ask the person who gave you this copy for the
-     current version of Neo Language Box.</p>
+  <h1>""" + title + """</h1>
+  """ + body + """
 </div>
 """
 
@@ -507,4 +672,6 @@ def _error_page(msg: str) -> str:
 
 
 if __name__ == "__main__":
+    if "--counter" in sys.argv:
+        sys.exit(_run_counter())
     sys.exit(main())
